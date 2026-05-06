@@ -2,6 +2,10 @@
 
 MDLuma is a lightweight desktop Markdown viewer for Windows, written in Rust.
 
+![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)
+![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
+
 It focuses on **fast startup and low memory usage** — built compactly with Rust and rendering via [Sciter](https://sciter.com) (a compact HTML/CSS/JS engine), avoiding the overhead of full WebView-based or Electron-based approaches.
 
 ## Features
