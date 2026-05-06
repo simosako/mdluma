@@ -1,0 +1,105 @@
+<!doctype html>
+<html theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>MDViewer icon theme demo</title>
+  <style>
+    html {
+      font-family: "Segoe UI", sans-serif;
+      background: #f9fafb;
+      color: #111827;
+    }
+    html[theme="dark"] {
+      background: #1b1f24;
+      color: #f3f4f6;
+    }
+    body {
+      margin: 0;
+    }
+    .titlebar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-left: 10px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    html[theme="dark"] .titlebar {
+      border-bottom-color: #252b33;
+    }
+    .app-logo {
+      width: 22px;
+      height: 22px;
+    }
+    .app-name {
+      font-weight: 700;
+      margin-right: 24px;
+    }
+    .file-name {
+      margin-right: auto;
+    }
+    button {
+      width: 42px;
+      height: 42px;
+      border: none;
+      background: transparent;
+      padding: 0;
+    }
+    button:hover {
+      background: #e5e7eb;
+    }
+    html[theme="dark"] button:hover {
+      background: #2b313a;
+    }
+    button.close:hover {
+      background: #c42b1c;
+    }
+    .icon {
+      width: 17px;
+      height: 17px;
+    }
+  </style>
+  <script>
+    function iconPath(name, theme) {
+      return `icons/${theme}/${name}.svg`;
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("theme", theme);
+
+      for (const img of document.querySelectorAll("img[data-icon]")) {
+        const name = img.getAttribute("data-icon");
+        img.src = iconPath(name, theme);
+      }
+
+      const themeIcon = document.querySelector("#theme-icon");
+      const themeIconName = theme === "dark" ? "moon" : "sun";
+      themeIcon.setAttribute("data-icon", themeIconName);
+      themeIcon.src = iconPath(themeIconName, theme);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      document.querySelector("#theme-button").addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("theme");
+        applyTheme(current === "dark" ? "light" : "dark");
+      });
+      applyTheme("light");
+    });
+  </script>
+</head>
+<body>
+  <header class="titlebar">
+    <img class="app-logo" data-icon="app" src="icons/light/app.svg">
+    <div class="app-name">MDViewer</div>
+    <div class="file-name">README.md</div>
+
+    <button title="Open file"><img class="icon" data-icon="open" src="icons/light/open.svg"></button>
+    <button title="Search"><img class="icon" data-icon="search" src="icons/light/search.svg"></button>
+    <button id="theme-button" title="Toggle theme"><img id="theme-icon" class="icon" data-icon="sun" src="icons/light/sun.svg"></button>
+    <button title="More"><img class="icon" data-icon="more" src="icons/light/more.svg"></button>
+    <button title="Minimize"><img class="icon" data-icon="window-minimize" src="icons/light/window-minimize.svg"></button>
+    <button title="Maximize"><img class="icon" data-icon="window-maximize" src="icons/light/window-maximize.svg"></button>
+    <button class="close" title="Close"><img class="icon" data-icon="window-close" src="icons/light/window-close.svg"></button>
+  </header>
+</body>
+</html>

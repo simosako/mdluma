@@ -1,0 +1,26 @@
+{
+  "feature_name": "external-editor-integration",
+  "created_at": "2026-05-04T18:47:25.7826632+09:00",
+  "updated_at": "2026-05-05T14:57:04.3624304+09:00",
+  "language": "ja",
+  "phase": "completed",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    },
+    "implementation": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

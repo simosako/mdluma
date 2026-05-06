@@ -1,0 +1,76 @@
+<!doctype html>
+<html theme="{{THEME_ATTR}}" window-frame="extended" window-resizable="true" window-minimizable="true" window-maximizable="true">
+<head>
+  <meta charset="utf-8">
+  <title>{{APP_NAME}}</title>
+  <style>{{STYLES}}</style>
+  <style>{{BODY_FONT_STYLE}}</style>
+  <script>{{SCRIPT}}</script>
+</head>
+<body>
+  <div class="viewer-shell" data-role="viewer-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag-region">
+        <div class="titlebar-brand" data-role="titlebar-brand">
+          <img class="app-logo" alt="" src="{{APP_ICON}}">
+          <div class="app-name">{{APP_NAME}}</div>
+        </div>
+        <div class="file-name" data-current-file>{{CURRENT_FILE_NAME}}</div>
+      </div>
+      <div class="titlebar-controls" data-role="future-controls">
+        <button type="button" title="Open Markdown file" aria-label="Open Markdown file" data-action="open-file"><img class="icon" alt="" src="{{OPEN_ICON}}"></button>
+        <button type="button" title="Search" aria-label="Search" data-action="search"><img class="icon" alt="" src="{{SEARCH_ICON}}"></button>
+        <button type="button" title="Toggle theme" aria-label="Toggle theme" data-action="theme"><img class="icon" alt="" src="{{THEME_ICON}}"></button>
+        <button type="menu" title="More options" aria-label="More options" data-action="more"><img class="icon" alt="" src="{{MORE_ICON}}"><menu.popup><li data-action="font">Font</li><li data-action="external-editor" {{EXTERNAL_EDITOR_DISABLED}}>External Editor</li><li data-action="external-editor-setting">External Editor Setting</li><li data-action="about">About</li></menu></button>
+      </div>
+      <div class="titlebar-controls window-controls" data-role="window-controls">
+        <button type="button" role="window-minimize" title="Minimize window" aria-label="Minimize window" data-action="window-minimize"><img class="icon" alt="" src="{{WINDOW_MINIMIZE_ICON}}"></button>
+        <button type="button" role="window-maximize" title="Maximize or restore window" aria-label="Maximize or restore window" data-action="window-toggle-maximize"><img class="icon" alt="" src="{{WINDOW_MAXIMIZE_ICON}}"></button>
+        <button type="button" role="window-close" class="close" title="Close window" aria-label="Close window" data-action="window-close"><img class="icon" alt="" src="{{WINDOW_CLOSE_ICON}}"></button>
+      </div>
+    </header>
+    <div class="titlebar-spacer" aria-hidden="true"></div>
+    <div class="search-panel" data-search-panel hidden aria-hidden="true">
+      <div class="search-panel-inner">
+        <input type="text" class="search-input" data-search-input placeholder="Search..." aria-label="Search text">
+        <button type="button" class="search-case-btn" data-search-case-sensitive title="Match case" aria-pressed="false">Aa</button>
+        <button type="button" class="search-nav-btn" data-search-prev title="Previous match" aria-label="Previous match">
+          <img class="search-nav-icon" alt="" src="{{SEARCH_PREV_ICON}}">
+        </button>
+        <button type="button" class="search-nav-btn" data-search-next title="Next match" aria-label="Next match">
+          <img class="search-nav-icon" alt="" src="{{SEARCH_NEXT_ICON}}">
+        </button>
+        <button type="button" class="search-close-btn" data-search-close title="Close search" aria-label="Close search">
+          <img class="search-close-icon" alt="" src="{{SEARCH_CLOSE_ICON}}">
+        </button>
+      </div>
+      <div class="search-info" data-search-info></div>
+    </div>
+    <section class="viewer-viewport" data-role="viewer-viewport">
+      <div class="viewport-body" data-role="viewport-body">
+        <section class="error-area" data-error-area>{{ERROR}}</section>
+        <section class="copy-status" data-copy-status aria-live="polite"></section>
+        <main class="content" data-content-area data-markdown-body-host>{{CONTENT}}</main>
+      </div>
+    </section>
+    <div class="about-overlay" data-about-overlay hidden>
+      <section class="about-dialog">
+        <header>
+          <img alt="" src="{{APP_ICON}}">
+          <div>
+            <strong>MDLuma</strong>
+            <small>Version {{VERSION}} ({{BUILD_NUMBER}})</small>
+          </div>
+        </header>
+        <p>Copyright (c) Akira Shimosako. All rights reserved.</p>
+        <p>{{SCITER_ATTRIBUTION}}</p>
+        <footer>
+          <button data-action="about-ok">OK</button>
+        </footer>
+      </section>
+    </div>
+    {{ERROR_OVERLAY}}
+    <menu.popup id="recent-files-menu" hidden>{{RECENT_FILES}}</menu>
+  </div>
+</body>
+</html>

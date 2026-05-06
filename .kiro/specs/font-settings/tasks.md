@@ -1,0 +1,111 @@
+# 実装計画
+
+- [x] 1. 本文フォント設定の永続化モデル
+- [x] 1.1 本文フォント値オブジェクトと Settings 拡張
+  - `BodyFontSettings` 構造体（`family_name: String`, `point_size_tenths: u16`）を `settings.rs` に定義する
+  - `Settings` に `body_font: Option<BodyFontSettings>` を追加し、`#[serde(default)]` で既存設定ファイルとの後方互換性を保つ
+  - 空文字 family や 0 サイズの値を持つ `BodyFontSettings` を無効とみなし、デシリアライズ後に `None` へ正規化する検証ロジックを追加する
+  - `Settings::default()` で `body_font: None` を返す
+  - `SettingsFile.load()` の既存 best-effort 方針により、body_font 欠落や JSON 解析失敗時は自動的に `Settings::default()` へフォールバックする
+  - 単体テストで直列化・逆直列化・既定値・無効値フォールバックを検証する
+  - 完了状態: `rtk cargo test` がパスし、`BodyFontSettings` が `Settings` JSON に含まれる
+  - _Requirements: 3.1, 3.2, 3.4, 4.1_
+  - _Boundary: BodyFontSettingsStore_
+
+- [x] 2. フォントダイアログのトレイト定義とエラー分類
+- [x] 2.1 FontDialog トレイトと FontDialogResult の定義
+  - `FontDialog` トレイト（`choose_body_font(&self, initial: Option<&BodyFontSettings>) -> Result<FontDialogResult, ViewerError>`）を `src/platform/` 配下に定義する
+  - `FontDialogResult` 列挙型（`Selected(BodyFontSettings)`, `Cancelled`）を定義する
+  - `ViewerError::FontDialog { message: String }` バリアントを `errors.rs` に追加し、`user_message()` と `operator_diagnostic()` を実装する
+  - `platform/mod.rs` で `FontDialog`, `FontDialogResult` を `pub use` する
+  - 既存テストを壊さない（`ViewerError` の既存マッチアームへの影響なし）
+  - 完了状態: `rtk cargo test` がパスし、`FontDialog` トレイトがコンパイル通過する
+  - _Requirements: 1.2, 1.3, 1.4, 4.3_
+  - _Boundary: FontDialog_
+
+- [x] 3. ViewerCommand 拡張とコマンドブリッジ
+- [x] 3.1 FontSettingsRequested コマンドの追加
+  - `ViewerCommand::FontSettingsRequested` バリアントを `sciter/window.rs` に追加する
+  - `from_element_action` に `"font"` → `FontSettingsRequested` の対応を追加する
+  - `parse_scripting_method_call` に `"font-settings-requested"` → `FontSettingsRequested` の対応を追加する
+  - `AppController::handle_viewer_command` の match に `FontSettingsRequested` アームを追加する（後続タスクで実装するため、この時点ではスタブでコンパイルを通す）
+  - `rtk cargo test` がパスする
+  - 完了状態: `"font"` および `"font-settings-requested"` が `ViewerCommand::FontSettingsRequested` へ変換される
+  - _Requirements: 1.2, 1.4_
+  - _Boundary: ViewerCommandBridge_
+
+- [x] 4. Windows ネイティブフォントダイアログの実装 (P)
+- [x] 4.1 WindowsFontDialog の FFI 実装
+  - `src/platform/windows_font_dialog.rs` に `WindowsFontDialog` 構造体を作成し `FontDialog` トレイトを実装する
+  - `ChooseFontW` / `CHOOSEFONTW` / `LOGFONTW` を使った Win32 FFI を実装し、`Comdlg32` をリンクする
+  - `BodyFontSettings` から `LOGFONTW` 初期値を構築し、ダイアログ確定結果を `FontDialogResult::Selected(BodyFontSettings)` に変換する
+  - `FALSE + CommDlgExtendedError() == 0` をキャンセル（`FontDialogResult::Cancelled`）、非 0 を実エラー（`ViewerError::FontDialog`）として区別する
+  - `CF_INITTOLOGFONTSTRUCT` および `CF_FORCEFONTEXIST` フラグを設定する
+  - 単体テストでトレイト契約（メソッドシグネチャ、戻り値型）を検証する
+  - 完了状態: `WindowsFontDialog` が `FontDialog` トレイトを実装し、コンパイルが通過する
+  - _Depends: 2.1_
+  - _Requirements: 1.2, 1.3, 1.4_
+  - _Boundary: WindowsFontDialog_
+
+- [x] 5. 本文フォント CSS 変数注入とスタイル定義 (P)
+- [x] 5.1 本文限定フォント CSS 変数の注入
+  - `ShellModel` に `body_font: Option<&BodyFontSettings>` フィールドを追加する
+  - `render_shell` で `body_font` が `Some` の場合、`--body-font-family` および `--body-font-size` CSS 変数を `.markdown-selection-host` または `.markdown-body` に限定して注入する
+  - family 名は CSS 文字列としてエスケープし、フォールバックチェーン `selected, "Segoe UI", sans-serif` を生成する
+  - サイズは `point_size_tenths` を `pt` 文字列へ変換する
+  - `body_font` が `None` の場合は CSS 変数を注入せず、CSS デフォルト値だけで描画する
+  - HTML シェルテンプレートに本文フォント用プレースホルダーを追加する
+  - `styles.css` に本文フォント変数の消費ルールを追加し、`.markdown-body` だけに作用させる
+  - `html` ルートの `font-family` は既存の `"Segoe UI", sans-serif` を維持し、タイトルバーや検索 UI のフォントが変わらないことを確認する
+  - 単体テストで CSS 出力が本文要素に限定されること、本文フォント `None` で変数が注入されないことを検証する
+  - 完了状態: `rtk cargo test` がパスし、`ShellModel` に `body_font` を渡した場合の HTML 出力に本文フォント CSS 変数が含まれる
+  - _Depends: 1.1_
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.3, 4.2_
+  - _Boundary: BodyFontShellStyle_
+
+- [x] 6. `...` メニューの Font 導線
+- [x] 6.1 Sciter メニューボタン化と Font 項目追加
+  - `index.html` の `more` ボタンを Sciter `button type="menu"` に変更し、`disabled` 属性を除去する
+  - `<menu.popup>` 内に `Font` 項目を `data-action="font"` で定義する
+  - `app.js` に `requestFontSettings()` 関数を追加し、`Window.this.xcall("font-settings-requested")` を送出する
+  - `handleClick` で `action === "font"` を `requestFontSettings()` にルーティングする
+  - メニュー項目自身のフォントは本文フォント設定の影響を受けない（`.markdown-body` スコープ外であるため自動的に満たされる）
+  - 単体テストで HTML 出力に `Font` メニュー項目が含まれること、`more` ボタンの `disabled` が除去されることを検証する
+  - 完了状態: `rtk cargo test` がパスし、レンダリングされた HTML に `data-action="font"` 要素が含まれる
+  - _Requirements: 1.1, 2.2_
+  - _Boundary: MoreMenuUi_
+
+- [x] 7. フォント設定フローと起動時復元の統合
+- [x] 7.1 AppController へのフォントダイアログ統合
+  - `AppController` に `FontDialog` トレイトのジェネリックパラメータを追加する
+  - `body_font: Option<BodyFontSettings>` フィールドを追加し、各コンストラクタで `SettingsFile.load().body_font` から初期化する
+  - `open_body_font_dialog()` メソッドを実装する: 確定時は `body_font` 更新 → `Settings { theme, body_font }` 保存 → `render_state_html()` + `show_document()` 再描画; キャンセル時は no-op; ダイアログエラー時は `debug_log!` で診断を残しセッションを継続
+  - 保存は best-effort とし、保存失敗時も現セッションの本文フォント表示を維持する
+  - `handle_viewer_command` の `FontSettingsRequested` アームをスタブから `open_body_font_dialog()` の呼び出しに置き換える
+  - `toggle_theme()` の save 呼び出しで `body_font` を含める
+  - `render_state_html()` の `ShellModel` 構築に `body_font` を渡す
+  - テスト用コンストラクタとスタブもジェネリックパラメータに対応させる
+  - 完了状態: フォント設定確定 → 本文フォント変更 → 保存 → 再描画の一連フローがコンパイル通過する
+  - _Depends: 1.1, 2.1, 3.1, 4.1, 5.1_
+  - _Requirements: 1.2, 1.4, 2.1, 2.3, 3.1, 3.2, 3.3, 4.1, 4.3_
+  - _Boundary: FontSelectionController_
+
+- [x] 7.2 lib.rs の起動時配線更新
+  - `StartupController` 型エイリアスに `WindowsFontDialog` ジェネリックを追加する
+  - `build_startup_controller()` で `WindowsFontDialog` を `AppController::with_launcher()` に渡す
+  - `lib.rs` の `pub use` で `WindowsFontDialog` を公開する
+  - 既存の lib.rs テストがコンパイルしパスすることを確認する
+  - 完了状態: `rtk cargo test` がパスし、`StartupController` に `WindowsFontDialog` が組み込まれる
+  - _Depends: 4.1, 7.1_
+  - _Requirements: 3.2, 3.3_
+  - _Boundary: FontSelectionController_
+
+- [x] 8.* フォント設定フローの単体テスト
+  - フォントダイアログ確定時に `body_font` が更新され、`Settings` 保存に含まれることを検証する（受入れ基準 3.1）
+  - フォントダイアログキャンセル時に `body_font` と HTML 出力が不変であることを検証する（受入れ基準 1.4）
+  - 保存失敗時もセッション表示が更新されることを検証する（受入れ基準 4.3）
+  - 起動時に保存済み `body_font` が最初の `ShellModel` に渡されることを検証する（受入れ基準 3.2, 3.3）
+  - 保存済み設定がない場合は `body_font` が `None` であることを検証する（受入れ基準 3.4）
+  - 保存済み設定の読込失敗時に `body_font` が `None` でフォールバックすることを検証する（受入れ基準 4.1）
+  - _Depends: 7.1_
+  - _Requirements: 1.2, 1.4, 2.1, 3.1, 3.2, 3.3, 4.1, 4.3_
