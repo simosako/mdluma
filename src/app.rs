@@ -46,7 +46,10 @@ where
     U: ViewerUi,
 {
     pub fn new(dialog: D, loader: L, renderer: R, shell: H, ui: U) -> Self {
-        let settings_file = SettingsFile::new();
+        let test_settings_dir = std::env::temp_dir()
+            .join(format!("mdluma-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&test_settings_dir);
+        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
         Self {
             dialog,
@@ -74,7 +77,10 @@ where
         ui: U,
         state: ViewerState,
     ) -> Self {
-        let settings_file = SettingsFile::new();
+        let test_settings_dir = std::env::temp_dir()
+            .join(format!("mdluma-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&test_settings_dir);
+        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
         Self {
             dialog,
@@ -473,7 +479,10 @@ where
         external_editor_launcher: E,
         state: ViewerState,
     ) -> Self {
-        let settings_file = SettingsFile::new();
+        let test_settings_dir = std::env::temp_dir()
+            .join(format!("mdluma-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&test_settings_dir);
+        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
         Self {
             dialog,
@@ -1884,7 +1893,8 @@ mod tests {
             ui.clone(),
             launcher,
             (),
-        );
+        )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller
             .open_dropped_files(vec![file_path])
@@ -2067,6 +2077,7 @@ mod tests {
             launcher,
             (),
         )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")))
         .set_state(ViewerState::document_loaded(existing));
 
         controller
@@ -2122,6 +2133,7 @@ mod tests {
             launcher,
             (),
         )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")))
         .set_state(error_state);
 
         controller
@@ -2178,7 +2190,8 @@ mod tests {
             ui.clone(),
             launcher,
             (),
-        );
+        )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller
             .open_dropped_files(vec![f1.clone(), f2.clone(), f3.clone()])
@@ -2229,7 +2242,8 @@ mod tests {
             ui.clone(),
             launcher,
             (),
-        );
+        )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller
             .handle_viewer_command(ViewerCommand::OpenDroppedFiles(vec![file_path]))
@@ -2526,6 +2540,7 @@ mod tests {
             launcher,
             (),
         )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")))
         .with_theme(Theme::Dark);
 
         controller
@@ -2556,6 +2571,7 @@ mod tests {
 
     #[test]
     fn font_settings_requested_updates_body_font_and_renders_on_confirm() {
+        let dir = unique_test_dir("font-settings-update-body-font");
         let shell = RecordingHtmlShell::new(vec![Ok("<html>font-applied</html>".to_string())]);
         let ui = RecordingViewerUi::default();
         let font_dialog = StubFontDialog::selected("Consolas", 110);
@@ -2569,7 +2585,8 @@ mod tests {
             (),
             (),
         )
-        .with_body_font(None);
+        .with_body_font(None)
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller
             .handle_viewer_command(ViewerCommand::FontSettingsRequested)

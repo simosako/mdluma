@@ -243,6 +243,7 @@ mod tests {
     use crate::sciter::window::{
         ViewerCommand, ViewerCommandBinder, ViewerCommandHandler, ViewerUi,
     };
+    use crate::settings::SettingsFile;
     use crate::{build_startup_controller, start_application_with};
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -491,6 +492,12 @@ mod tests {
         let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let plan = plan_startup_launch(args);
         let mut stderr_lines: Vec<String> = Vec::new();
+        let test_settings_dir = std::env::temp_dir().join(format!(
+            "mdluma-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&test_settings_dir);
+        let test_settings_path = test_settings_dir.join("settings.json");
 
         let result = super::execute_launch_plan(
             plan,
@@ -501,6 +508,7 @@ mod tests {
                 let ui = ui.clone();
                 move |distribution_dir, runtime| {
                     build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
+                        .map(|c| c.with_settings_file(SettingsFile::with_path(test_settings_path.clone())))
                 }
             },
             (),
@@ -968,7 +976,8 @@ mod tests {
             (),
             ee_launcher,
         )
-        .expect("build controller with external editor launcher should succeed");
+        .expect("build controller with external editor launcher should succeed")
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller.prepare_startup_path(&source_path);
 
