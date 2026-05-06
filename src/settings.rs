@@ -55,6 +55,29 @@ where
     Ok(opt.filter(is_valid_body_font))
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+#[serde(default)]
+pub struct WindowGeometry {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+fn is_valid_window_geometry(g: &WindowGeometry) -> bool {
+    g.right > g.left && g.bottom > g.top && g.left >= -32000 && g.top >= -32000
+}
+
+fn deserialize_window_geometry<'de, D>(
+    deserializer: D,
+) -> Result<Option<WindowGeometry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<WindowGeometry>::deserialize(deserializer)?;
+    Ok(opt.filter(is_valid_window_geometry))
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(default)]
 pub struct Settings {
@@ -69,6 +92,12 @@ pub struct Settings {
     pub external_editor: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_files: Vec<PathBuf>,
+    #[serde(
+        deserialize_with = "deserialize_window_geometry",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub window_geometry: Option<WindowGeometry>,
 }
 
 impl Default for Settings {
@@ -78,6 +107,7 @@ impl Default for Settings {
             body_font: None,
             external_editor: None,
             recent_files: Vec::new(),
+            window_geometry: None,
         }
     }
 }
@@ -290,6 +320,7 @@ mod tests {
                 body_font: None,
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save settings");
 
@@ -430,6 +461,7 @@ mod tests {
             }),
             external_editor: None,
             recent_files: vec![],
+            window_geometry: None,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -453,6 +485,7 @@ mod tests {
                 }),
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save settings");
 
@@ -531,6 +564,7 @@ mod tests {
             body_font: None,
             external_editor: Some(PathBuf::from(r"C:\Tools\vscode\Code.exe")),
             recent_files: vec![],
+            window_geometry: None,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -552,6 +586,7 @@ mod tests {
             }),
             external_editor: Some(PathBuf::from(r"C:\Tools\notepadpp\notepad++.exe")),
             recent_files: vec![],
+            window_geometry: None,
         };
         settings_file.save(&save_settings).expect("save settings");
 

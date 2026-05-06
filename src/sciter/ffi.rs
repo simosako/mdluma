@@ -7,7 +7,7 @@ use std::sync::{Mutex, OnceLock};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWLP_WNDPROC, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_DROPFILES,
+    SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE, WM_DROPFILES,
     WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
@@ -439,13 +439,25 @@ impl SciterApi {
         }
     }
 
-    pub(crate) fn create_window(&self) -> Result<SciterWindowHandle, SciterRuntimeError> {
+    pub(crate) fn create_window(
+        &self,
+        saved_geometry: Option<&crate::settings::WindowGeometry>,
+    ) -> Result<SciterWindowHandle, SciterRuntimeError> {
         let (cascade_left, cascade_top) = read_window_cascade_offset();
-        let mut frame = SciterRect {
-            left: 100 + cascade_left,
-            top: 100 + cascade_top,
-            right: 1180 + cascade_left,
-            bottom: 820 + cascade_top,
+        let mut frame = if let Some(geo) = saved_geometry {
+            SciterRect {
+                left: geo.left + cascade_left,
+                top: geo.top + cascade_top,
+                right: geo.right + cascade_left,
+                bottom: geo.bottom + cascade_top,
+            }
+        } else {
+            SciterRect {
+                left: 100 + cascade_left,
+                top: 100 + cascade_top,
+                right: 1180 + cascade_left,
+                bottom: 820 + cascade_top,
+            }
         };
         let creation_flags = viewer_window_creation_flags();
         self.configure_script_runtime_features()?;
@@ -1043,6 +1055,39 @@ fn restore_window_placement(window: SciterWindowHandle, mut placement: WindowPla
     }
 }
 
+#[cfg(windows)]
+fn capture_normal_window_geometry(window: SciterWindowHandle) {
+    if window.is_null() {
+        return;
+    }
+
+    let Some(placement) = capture_window_placement(window) else {
+        return;
+    };
+
+    let normal = placement.normal_position;
+    let geometry = crate::settings::WindowGeometry {
+        left: normal.left,
+        top: normal.top,
+        right: normal.right,
+        bottom: normal.bottom,
+    };
+
+    unsafe {
+        DL_CAPTURED_GEOMETRY = Some(geometry);
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn take_captured_window_geometry() -> Option<crate::settings::WindowGeometry> {
+    unsafe { std::ptr::replace(std::ptr::addr_of_mut!(DL_CAPTURED_GEOMETRY), None) }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn take_captured_window_geometry() -> Option<crate::settings::WindowGeometry> {
+    None
+}
+
 fn viewer_window_creation_flags() -> u32 {
     // The HTML shell owns the only visible top bar, so the host window must not add native title
     // text or window controls above it.
@@ -1420,6 +1465,11 @@ static mut DL_PENDING_HTML: Option<PendingDeferredLoad> = None;
 #[cfg(windows)]
 static mut DL_PENDING_PLACEMENT_RESTORE: Option<WindowPlacement> = None;
 
+// SAFETY: This is accessed exclusively from the single-window UI thread via the
+// subclassed WndProc and the public take function called at shutdown.
+#[cfg(windows)]
+static mut DL_CAPTURED_GEOMETRY: Option<crate::settings::WindowGeometry> = None;
+
 #[cfg(windows)]
 static mut DL_POSITION_LOCKED: bool = false;
 
@@ -1498,6 +1548,10 @@ unsafe extern "system" fn deferred_load_wnd_proc(
             let pos = &mut *(lparam as *mut WindowPos);
             pos.flags |= SWP_NOMOVE;
         }
+    }
+
+    if msg == WM_CLOSE {
+        capture_normal_window_geometry(hwnd);
     }
 
     if msg == WM_DL_DEFERRED_LOAD {
@@ -1687,7 +1741,7 @@ mod tests {
         );
 
         let error = api
-            .create_window()
+            .create_window(None)
             .expect_err("null window handle should fail");
         assert!(matches!(error, SciterRuntimeError::ApiUnavailable { .. }));
     }
@@ -1707,7 +1761,7 @@ mod tests {
             fake_sciter_value_string_data_never_called,
         );
 
-        let _window = api.create_window().expect("create fake window");
+        let _window = api.create_window(None).expect("create fake window");
 
         assert_eq!(
             LAST_CREATE_WINDOW_FLAGS.load(Ordering::SeqCst),
@@ -1755,7 +1809,7 @@ mod tests {
             fake_sciter_value_string_data_never_called,
         );
 
-        let window = api.create_window().expect("create fake window");
+        let window = api.create_window(None).expect("create fake window");
         let error = api
             .load_html(window, "<html></html>")
             .expect_err("load html failure should be typed");
@@ -1774,7 +1828,7 @@ mod tests {
             fake_sciter_value_string_data_never_called,
         );
 
-        let window = api.create_window().expect("create fake window");
+        let window = api.create_window(None).expect("create fake window");
         api.load_html(window, "<html></html>")
             .expect("load html with local-only base url");
 
@@ -1793,7 +1847,7 @@ mod tests {
         );
 
         let error = api
-            .create_window()
+            .create_window(None)
             .expect_err("init script failure should abort window creation");
 
         assert!(matches!(error, SciterRuntimeError::ApiUnavailable { .. }));

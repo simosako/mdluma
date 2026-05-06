@@ -70,7 +70,15 @@ pub fn run() -> Result<(), StartupError> {
             build_startup_controller(
                 distribution_dir,
                 runtime,
-                |runtime| SciterWindow::new(runtime).map(|window| Rc::new(RefCell::new(window))),
+                |runtime| {
+                    let settings_file = crate::settings::SettingsFile::new();
+                    let settings = settings_file.load();
+                    SciterWindow::with_geometry(
+                        runtime,
+                        settings.window_geometry.as_ref(),
+                    )
+                    .map(|window| Rc::new(RefCell::new(window)))
+                },
                 ProcessViewerChildLauncher::default(),
                 ProcessExternalEditorLauncher::default(),
             )

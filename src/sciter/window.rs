@@ -205,20 +205,38 @@ pub struct SciterWindow {
 
 impl SciterWindow {
     pub fn new(runtime: SciterRuntime) -> Result<Self, ViewerError> {
-        Self::with_api(runtime.into_api())
+        Self::with_api_and_geometry(runtime.into_api(), None)
     }
 
+    pub fn with_geometry(
+        runtime: SciterRuntime,
+        geometry: Option<&crate::settings::WindowGeometry>,
+    ) -> Result<Self, ViewerError> {
+        Self::with_api_and_geometry(runtime.into_api(), geometry)
+    }
+
+    #[cfg(test)]
     fn with_api(api: SciterApi) -> Result<Self, ViewerError> {
-        Self::with_api_and_window_chrome(api, Box::new(WindowsWindowChrome))
+        Self::with_api_and_geometry(api, None)
+    }
+
+    fn with_api_and_geometry(
+        api: SciterApi,
+        saved_geometry: Option<&crate::settings::WindowGeometry>,
+    ) -> Result<Self, ViewerError> {
+        Self::with_api_and_window_chrome(api, Box::new(WindowsWindowChrome), saved_geometry)
     }
 
     fn with_api_and_window_chrome(
         api: SciterApi,
         window_chrome: Box<dyn WindowChromeController>,
+        saved_geometry: Option<&crate::settings::WindowGeometry>,
     ) -> Result<Self, ViewerError> {
         #[cfg(windows)]
         api.init_app();
-        let window = api.create_window().map_err(ViewerError::from)?;
+        let window = api
+            .create_window(saved_geometry)
+            .map_err(ViewerError::from)?;
         #[cfg(windows)]
         api.setup_deferred_load(window);
         Ok(Self {
@@ -1293,7 +1311,7 @@ mod tests {
         let fake_window_chrome = FakeWindowChrome::default();
         let chrome_calls = fake_window_chrome.calls.clone();
         let mut window =
-            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome))
+            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome), None)
                 .expect("create window wrapper");
 
         window
@@ -1621,7 +1639,7 @@ mod tests {
         let fake_window_chrome = FakeWindowChrome::default();
         let chrome_calls = fake_window_chrome.calls.clone();
         let mut window =
-            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome))
+            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome), None)
                 .expect("create window wrapper");
 
         window
@@ -1638,6 +1656,7 @@ mod tests {
         let mut window = SciterWindow::with_api_and_window_chrome(
             fake_api(true),
             Box::new(FailingCloseWindowChrome::default()),
+            None,
         )
         .expect("create window wrapper");
 
