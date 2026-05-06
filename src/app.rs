@@ -8,7 +8,7 @@ use crate::markdown::MarkdownRenderer;
 use crate::open_paths::plan_drop_open;
 use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
 use crate::sciter::window::{ViewerCommand, ViewerCommandBinder, ViewerCommandHandler, ViewerUi};
-use crate::settings::{BodyFontSettings, Settings, SettingsFile, ThemePreference};
+use crate::settings::{BodyFontSettings, Settings, SettingsFile, ThemePreference, WindowGeometry};
 use crate::ui::Theme;
 use crate::viewer_launcher::ViewerChildLauncher;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,7 @@ pub struct AppController<D, F, L, R, H, U, S = (), E = ()> {
     external_editor: Option<PathBuf>,
     recent_files: Vec<PathBuf>,
     settings_file: SettingsFile,
+    window_geometry: Option<WindowGeometry>,
 }
 
 #[cfg(test)]
@@ -66,6 +67,7 @@ where
             external_editor: settings.external_editor,
             recent_files: settings.recent_files,
             settings_file,
+            window_geometry: settings.window_geometry,
         }
     }
 
@@ -97,6 +99,7 @@ where
             external_editor: settings.external_editor,
             recent_files: settings.recent_files,
             settings_file,
+            window_geometry: settings.window_geometry,
         }
     }
 }
@@ -130,8 +133,23 @@ where
         self.body_font = settings.body_font;
         self.external_editor = settings.external_editor;
         self.recent_files = settings.recent_files;
+        self.window_geometry = settings.window_geometry;
         self.settings_file = settings_file;
         self
+    }
+
+    fn build_settings(&self) -> Settings {
+        Settings {
+            theme: ThemePreference::from(self.theme),
+            body_font: self.body_font.clone(),
+            external_editor: self.external_editor.clone(),
+            recent_files: self.recent_files.clone(),
+            window_geometry: self.window_geometry.clone(),
+        }
+    }
+
+    fn save_settings(&self) {
+        let _ = self.settings_file.save(&self.build_settings());
     }
 
     pub fn start(&mut self) -> Result<(), ViewerError> {
@@ -153,12 +171,7 @@ where
             OpenFileResult::Cancelled => Ok(()),
             OpenFileResult::Selected(path) => {
                 self.external_editor = Some(path.clone());
-                if let Err(error) = self.settings_file.save(&Settings {
-                    theme: ThemePreference::from(self.theme),
-                    body_font: self.body_font.clone(),
-                    external_editor: Some(path),
-                    recent_files: self.recent_files.clone(),
-                }) {
+                if let Err(error) = self.settings_file.save(&self.build_settings()) {
                     return self.show_error_state(error);
                 }
                 Ok(())
@@ -234,12 +247,7 @@ where
 
     fn toggle_theme(&mut self) -> Result<(), ViewerError> {
         self.theme = self.theme.toggle();
-        let _ = self.settings_file.save(&Settings {
-            theme: ThemePreference::from(self.theme),
-            body_font: self.body_font.clone(),
-            external_editor: self.external_editor.clone(),
-            recent_files: self.recent_files.clone(),
-        });
+        let _ = self.settings_file.save(&self.build_settings());
 
         let next_state = if self.state.is_error_visible() && self.state.current_document().is_some()
         {
@@ -266,12 +274,7 @@ where
         {
             Ok(FontDialogResult::Selected(font)) => {
                 self.body_font = Some(font);
-                let _ = self.settings_file.save(&Settings {
-                    theme: ThemePreference::from(self.theme),
-                    body_font: self.body_font.clone(),
-                    external_editor: self.external_editor.clone(),
-                    recent_files: self.recent_files.clone(),
-                });
+                let _ = self.settings_file.save(&self.build_settings());
                 let html = self.render_state_html(&self.state)?;
                 self.ui.show_document(&html)?;
                 Ok(())
@@ -358,13 +361,7 @@ where
         self.recent_files.retain(|p| p != &canonical);
         self.recent_files.insert(0, canonical);
         self.recent_files.truncate(10);
-        let settings = Settings {
-            theme: ThemePreference::from(self.theme),
-            body_font: self.body_font.clone(),
-            external_editor: self.external_editor.clone(),
-            recent_files: self.recent_files.clone(),
-        };
-        let _ = self.settings_file.save(&settings);
+        let _ = self.settings_file.save(&self.build_settings());
     }
 
     fn render_state_html(&self, state: &ViewerState) -> Result<String, ViewerError> {
@@ -453,6 +450,7 @@ where
             external_editor: settings.external_editor,
             recent_files: settings.recent_files,
             settings_file,
+            window_geometry: settings.window_geometry,
         }
     }
 
@@ -500,6 +498,7 @@ where
             external_editor: settings.external_editor,
             recent_files: settings.recent_files,
             settings_file,
+            window_geometry: settings.window_geometry,
         }
     }
 
@@ -534,7 +533,17 @@ where
         let mut ui = self.ui.clone();
         ui.bind_viewer_command_handler(&mut self)?;
         self.start()?;
-        ui.run_event_loop()
+        let result = ui.run_event_loop();
+        self.persist_captured_window_geometry();
+        result
+    }
+
+    fn persist_captured_window_geometry(&mut self) {
+        #[cfg(windows)]
+        if let Some(geometry) = crate::sciter::ffi::take_captured_window_geometry() {
+            self.window_geometry = Some(geometry);
+            self.save_settings();
+        }
     }
 }
 
@@ -2726,6 +2735,7 @@ mod tests {
                 }),
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save test settings");
 
@@ -2786,6 +2796,7 @@ mod tests {
                 }),
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save test settings");
 
@@ -2833,6 +2844,7 @@ mod tests {
                 }),
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save test settings");
 
@@ -2871,6 +2883,7 @@ mod tests {
                 body_font: None,
                 external_editor: None,
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save test settings");
 
@@ -4349,6 +4362,7 @@ mod tests {
                 body_font: None,
                 external_editor: Some(existing_path.clone()),
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save test settings");
 
@@ -4760,6 +4774,7 @@ mod tests {
                 body_font: None,
                 external_editor: Some(editor_path.clone()),
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save settings");
 
@@ -4810,6 +4825,7 @@ mod tests {
                 body_font: None,
                 external_editor: Some(saved_path.clone()),
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save settings");
 
@@ -4892,6 +4908,7 @@ mod tests {
                 body_font: None,
                 external_editor: Some(existing_path.clone()),
                 recent_files: vec![],
+                window_geometry: None,
             })
             .expect("save initial settings");
         let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Cancelled);
