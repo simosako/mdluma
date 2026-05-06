@@ -36,7 +36,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath "$dir.zip"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: mdluma-*.zip
           generate_release_notes: true
