@@ -1024,16 +1024,6 @@ if (typeof Element !== "undefined") {
   };
 }
 
-var _dragState = {
-  tracking: false,
-  dragging: false,
-  xOff: 0,
-  yOff: 0,
-  startX: 0,
-  startY: 0,
-  popupAnchor: null,
-};
-
 function currentFileElement() {
   if (!document || typeof document.querySelector !== "function") {
     return null;
@@ -1058,72 +1048,6 @@ function handleRecentFileMenuClick(_event, item) {
   requestOpenRecentFile(index);
 }
 
-function closestCurrentFileElement(target) {
-  const elementTarget = normalizeEventTarget(target);
-  if (!elementTarget || typeof elementTarget.closest !== "function") {
-    return null;
-  }
-
-  return elementTarget.closest("[data-current-file]");
-}
-
-function movedPastDragThreshold(event) {
-  return (
-    Math.abs(event.screenX - _dragState.startX) >= 4 ||
-    Math.abs(event.screenY - _dragState.startY) >= 4
-  );
-}
-
-function resetDragState() {
-  _dragState.tracking = false;
-  _dragState.dragging = false;
-  _dragState.popupAnchor = null;
-}
-
-function beginDrag(event, target) {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.box !== "function") {
-    return false;
-  }
-
-  var pos = Window.this.box("position", "border", "desktop", true);
-  _dragState.tracking = true;
-  _dragState.dragging = false;
-  _dragState.xOff = event.screenX - pos[0];
-  _dragState.yOff = event.screenY - pos[1];
-  _dragState.startX = event.screenX;
-  _dragState.startY = event.screenY;
-  _dragState.popupAnchor = target || closestCurrentFileElement(event.target);
-  return true;
-}
-
-function onMouseMove(event) {
-  if (!_dragState.tracking) return;
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.move !== "function") return;
-  if (!_dragState.dragging && !movedPastDragThreshold(event)) return;
-
-  _dragState.dragging = true;
-
-  Window.this.move(
-    event.screenX - _dragState.xOff,
-    event.screenY - _dragState.yOff
-  );
-}
-
-function onMouseUp(event) {
-  if (!_dragState.tracking) return;
-
-  var dx = Math.abs(event.screenX - _dragState.startX);
-  var dy = Math.abs(event.screenY - _dragState.startY);
-  var popupAnchor = _dragState.popupAnchor;
-  var shouldShowPopup = !_dragState.dragging && dx < 4 && dy < 4 && popupAnchor;
-
-  resetDragState();
-
-  if (shouldShowPopup) {
-    showRecentFilesPopup(popupAnchor);
-  }
-}
-
 function showRecentFilesPopup(target) {
   var menu = recentFilesMenu();
   if (!menu || !menu.childElementCount) return;
@@ -1136,12 +1060,9 @@ function bindWindowDragHandlers() {
   var fileNameEl = currentFileElement();
   if (!fileNameEl || typeof fileNameEl.addEventListener !== "function") return false;
 
-  fileNameEl.addEventListener("mousedown", function(event) {
-    beginDrag(event, fileNameEl);
+  fileNameEl.addEventListener("click", function() {
+    showRecentFilesPopup(fileNameEl);
   });
-
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
   return true;
 }
 
@@ -1209,13 +1130,10 @@ function registerInitialRepaint() {
 
 if (typeof globalThis !== "undefined") {
   globalThis.__mdlumaTestHooks = Object.assign({}, globalThis.__mdlumaTestHooks, {
-    beginDrag,
     handleClick,
     handleMarkdownContextMenu,
     hasLoadedDocument,
     markdownContextMenuHtml,
-    onMouseMove,
-    onMouseUp,
     handleRecentFileMenuClick,
     setAboutOverlayOpen,
     setErrorOverlayOpen,

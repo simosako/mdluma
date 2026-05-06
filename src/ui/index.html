@@ -11,11 +11,11 @@
   <div class="viewer-shell" data-role="viewer-shell">
     <header class="titlebar">
       <div class="titlebar-drag-region">
-        <div class="titlebar-brand" data-role="titlebar-brand">
+        <div class="titlebar-brand" role="window-caption" data-role="titlebar-brand">
           <img class="app-logo" alt="" src="{{APP_ICON}}">
           <div class="app-name">{{APP_NAME}}</div>
         </div>
-        <div class="file-name" data-current-file>{{CURRENT_FILE_NAME}}</div>
+        <div class="file-name" role="window-caption" data-current-file>{{CURRENT_FILE_NAME}}</div>
       </div>
       <div class="titlebar-controls" data-role="future-controls">
         <button type="button" title="Open Markdown file" aria-label="Open Markdown file" data-action="open-file"><img class="icon" alt="" src="{{OPEN_ICON}}"></button>

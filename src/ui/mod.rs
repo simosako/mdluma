@@ -233,6 +233,7 @@ mod tests {
         assert!(index.contains("role=\"window-minimize\""));
         assert!(index.contains("role=\"window-maximize\""));
         assert!(index.contains("role=\"window-close\""));
+        assert!(index.contains("role=\"window-caption\""));
 
         assert!(js.contains("open-file-requested"));
         assert!(js.contains("xcall"));
@@ -935,40 +936,45 @@ if (popupArgs.options.anchorAt !== 1 || popupArgs.options.popupAt !== 7) {
     }
 
     #[test]
-    fn titlebar_drag_script_uses_desktop_ppx_and_moves_only_after_threshold() {
+    fn titlebar_uses_native_caption_role_and_file_click_popup() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
             .read_text_asset(UiTextAsset::AppJs)
             .expect("read app js");
+        let index = assets
+            .read_text_asset(UiTextAsset::IndexHtml)
+            .expect("read index html");
 
         let output = run_node_assertions(
             &script,
             r#"
-const boxCalls = [];
-const moveCalls = [];
+const docListeners = [];
+let fileClickHandler = null;
+let popupArgs = null;
+const menu = { childElementCount: 1 };
 const openButton = { addEventListener() {} };
 const currentFile = {
-  closest(selector) {
-    return selector === "[data-current-file]" ? this : null;
+  addEventListener(type, handler) {
+    if (type === "click") {
+      fileClickHandler = handler;
+    }
+  },
+  popup(menuElement, options) {
+    popupArgs = { menuElement, options };
   },
 };
 
 global.Window = {
   this: {
     xcall() {},
-    box(...args) {
-      boxCalls.push(args);
-      return [100, 200];
-    },
-    move(x, y) {
-      moveCalls.push([x, y]);
-    },
   },
 };
 
 global.document = {
   readyState: "loading",
-  addEventListener() {},
+  addEventListener(type) {
+    docListeners.push(type);
+  },
   querySelector(selector) {
     if (selector === '[data-action="open-file"]') {
       return openButton;
@@ -979,25 +985,32 @@ global.document = {
     return null;
   },
   getElementById() {
-    return null;
+    return menu;
   },
 };
 
 eval(scriptSource);
 
-globalThis.__mdlumaTestHooks.beginDrag({ screenX: 150, screenY: 260, target: currentFile }, currentFile);
-globalThis.__mdlumaTestHooks.onMouseMove({ screenX: 152, screenY: 262 });
-globalThis.__mdlumaTestHooks.onMouseMove({ screenX: 159, screenY: 270 });
-
-if (JSON.stringify(boxCalls) !== JSON.stringify([["position", "border", "desktop", true]])) {
-  throw new Error("unexpected box args: " + JSON.stringify(boxCalls));
+if (scriptSource.includes("Window.this.move")) {
+  throw new Error("window move should be delegated to native window-caption role");
 }
-if (JSON.stringify(moveCalls) !== JSON.stringify([[109, 210]])) {
-  throw new Error("unexpected move calls: " + JSON.stringify(moveCalls));
+if (docListeners.includes("mousemove") || docListeners.includes("mouseup")) {
+  throw new Error("drag should not use document mouse tracking: " + JSON.stringify(docListeners));
+}
+if (typeof fileClickHandler !== "function") {
+  throw new Error("expected file name click handler");
+}
+
+fileClickHandler();
+
+if (!popupArgs || popupArgs.menuElement !== menu) {
+  throw new Error("expected recent files popup from file name click");
 }
         "#,
         );
 
+        assert!(index.contains("class=\"titlebar-brand\" role=\"window-caption\""));
+        assert!(index.contains("class=\"file-name\" role=\"window-caption\""));
         assert!(output.status.success(), "{}", output.stderr);
     }
 
