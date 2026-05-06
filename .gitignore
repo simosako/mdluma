@@ -27,14 +27,18 @@ Desktop.ini
 .DS_Store
 
 # Vendor (Sciter SDK) — only specific files needed for build and compliance are unignored
-vendor/
+vendor/*
 !vendor/sciter-js-sdk-main/
+vendor/sciter-js-sdk-main/*
 !vendor/sciter-js-sdk-main/bin/
-!vendor/sciter-js-sdk-main/bin/windows/
-!vendor/sciter-js-sdk-main/bin/windows/x64/
-!vendor/sciter-js-sdk-main/bin/windows/x64/sciter.dll
 !vendor/sciter-js-sdk-main/LICENSE
 !vendor/sciter-js-sdk-main/SCITER-ENGINE-EULA.md
+vendor/sciter-js-sdk-main/bin/*
+!vendor/sciter-js-sdk-main/bin/windows/
+vendor/sciter-js-sdk-main/bin/windows/*
+!vendor/sciter-js-sdk-main/bin/windows/x64/
+vendor/sciter-js-sdk-main/bin/windows/x64/*
+!vendor/sciter-js-sdk-main/bin/windows/x64/sciter.dll
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
