@@ -364,6 +364,8 @@ mod tests {
             error.user_message(),
             "MDLuma could not open the file selection dialog."
         );
-        assert!(error.operator_diagnostic().contains("editor dialog failure"));
+        assert!(error
+            .operator_diagnostic()
+            .contains("editor dialog failure"));
     }
 }

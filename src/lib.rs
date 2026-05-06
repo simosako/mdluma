@@ -305,9 +305,7 @@ mod tests {
         assert!(ui.initial_html[0].contains("Open Markdown file"));
         assert!(ui.initial_html[0].contains("class=\"titlebar-drag-region\""));
         assert!(ui.initial_html[0].contains("data-current-file>No file open<"));
-        assert!(ui.initial_html[0].contains(
-            r#"data-action="external-editor-setting""#,
-        ));
+        assert!(ui.initial_html[0].contains(r#"data-action="external-editor-setting""#,));
         assert!(ui.document_html.is_empty());
         assert!(ui.errors.is_empty());
         assert!(matches!(
@@ -492,10 +490,8 @@ mod tests {
         let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let plan = plan_startup_launch(args);
         let mut stderr_lines: Vec<String> = Vec::new();
-        let test_settings_dir = std::env::temp_dir().join(format!(
-            "mdluma-test-{}",
-            std::process::id()
-        ));
+        let test_settings_dir =
+            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&test_settings_dir);
         let test_settings_path = test_settings_dir.join("settings.json");
 
@@ -508,7 +504,11 @@ mod tests {
                 let ui = ui.clone();
                 move |distribution_dir, runtime| {
                     build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
-                        .map(|c| c.with_settings_file(SettingsFile::with_path(test_settings_path.clone())))
+                        .map(|c| {
+                            c.with_settings_file(SettingsFile::with_path(
+                                test_settings_path.clone(),
+                            ))
+                        })
                 }
             },
             (),
@@ -709,7 +709,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for RecordingSpawnLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             self.launched.lock().unwrap().push(path.to_path_buf());
             Ok(())
         }
@@ -720,7 +725,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for FailingSpawnLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             if path == self.fail_on {
                 Err(ViewerError::runtime_unavailable("access denied"))
             } else {
@@ -748,7 +758,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for RecordingFailingSpawnLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             self.launched.lock().unwrap().push(path.to_path_buf());
             if path == self.fail_on {
                 Err(ViewerError::runtime_unavailable("not found"))
@@ -912,7 +927,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for RecordingOrderedLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             self.launched.lock().unwrap().push(path.to_path_buf());
             self.order
                 .lock()

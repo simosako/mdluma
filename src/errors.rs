@@ -164,9 +164,7 @@ impl ViewerError {
             Self::ExternalEditorLaunch { .. } => {
                 "MDLuma could not open the file in the external editor.".to_string()
             }
-            Self::SettingsSave { .. } => {
-                "MDLuma could not save application settings.".to_string()
-            }
+            Self::SettingsSave { .. } => "MDLuma could not save application settings.".to_string(),
         }
     }
 
@@ -198,10 +196,7 @@ impl ViewerError {
                 )
             }
             Self::SettingsSave { path, message } => {
-                format!(
-                    "settings save failed: {} - {message}",
-                    path.display()
-                )
+                format!("settings save failed: {} - {message}", path.display())
             }
         }
     }

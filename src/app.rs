@@ -46,8 +46,8 @@ where
     U: ViewerUi,
 {
     pub fn new(dialog: D, loader: L, renderer: R, shell: H, ui: U) -> Self {
-        let test_settings_dir = std::env::temp_dir()
-            .join(format!("mdluma-test-{}", std::process::id()));
+        let test_settings_dir =
+            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&test_settings_dir);
         let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
@@ -77,8 +77,8 @@ where
         ui: U,
         state: ViewerState,
     ) -> Self {
-        let test_settings_dir = std::env::temp_dir()
-            .join(format!("mdluma-test-{}", std::process::id()));
+        let test_settings_dir =
+            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&test_settings_dir);
         let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
@@ -241,7 +241,8 @@ where
             recent_files: self.recent_files.clone(),
         });
 
-        let next_state = if self.state.is_error_visible() && self.state.current_document().is_some() {
+        let next_state = if self.state.is_error_visible() && self.state.current_document().is_some()
+        {
             self.state.clone().dismiss_error()
         } else {
             self.state.clone()
@@ -479,8 +480,8 @@ where
         external_editor_launcher: E,
         state: ViewerState,
     ) -> Self {
-        let test_settings_dir = std::env::temp_dir()
-            .join(format!("mdluma-test-{}", std::process::id()));
+        let test_settings_dir =
+            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&test_settings_dir);
         let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
         let settings = settings_file.load();
@@ -594,7 +595,9 @@ impl ViewerState {
 
     pub fn dismiss_error(self) -> Self {
         match self {
-            Self::ErrorVisible { previous, .. } => previous.map(|state| *state).unwrap_or(Self::NoDocument),
+            Self::ErrorVisible { previous, .. } => {
+                previous.map(|state| *state).unwrap_or(Self::NoDocument)
+            }
             state => state,
         }
     }
@@ -941,9 +944,7 @@ mod tests {
         let markdown = large_markdown_fixture();
         fs::write(&source_path, &markdown).expect("write large markdown fixture");
 
-        let shell = crate::html_shell::DefaultHtmlShell::new(
-            crate::ui::EmbeddedUiAssets,
-        );
+        let shell = crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets);
         let ui = RecordingViewerUi::default();
         let mut controller = AppController::new(
             StubFileDialog::selected(source_path),
@@ -988,9 +989,7 @@ mod tests {
         fs::write(&source_path, markdown_sanitization_fixture())
             .expect("write markdown sanitization fixture");
 
-        let shell = crate::html_shell::DefaultHtmlShell::new(
-            crate::ui::EmbeddedUiAssets,
-        );
+        let shell = crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets);
         let ui = RecordingViewerUi::default();
         let mut controller = AppController::new(
             StubFileDialog::selected(source_path),
@@ -1350,7 +1349,10 @@ mod tests {
         let ui = RecordingViewerUi::default();
         let mut controller = AppController::with_state(
             StubFileDialog::selected(selected_path.clone()),
-            StubDocumentLoader::new(vec![Err(ViewerError::file_read(&selected_path, "access denied"))]),
+            StubDocumentLoader::new(vec![Err(ViewerError::file_read(
+                &selected_path,
+                "access denied",
+            ))]),
             StubMarkdownRenderer::new(Vec::new()),
             shell.clone(),
             ui.clone(),
@@ -1368,11 +1370,17 @@ mod tests {
         assert_eq!(controller.state().current_document(), Some(&existing));
         assert_eq!(
             shell.recorded_file_names(),
-            vec![Some("existing.md".to_string()), Some("existing.md".to_string())]
+            vec![
+                Some("existing.md".to_string()),
+                Some("existing.md".to_string())
+            ]
         );
         assert_eq!(
             ui.document_html(),
-            vec!["<html>error</html>".to_string(), "<html>restored</html>".to_string()]
+            vec![
+                "<html>error</html>".to_string(),
+                "<html>restored</html>".to_string()
+            ]
         );
     }
 
@@ -1387,8 +1395,10 @@ mod tests {
             StubMarkdownRenderer::new(Vec::new()),
             shell,
             ui.clone(),
-            ViewerState::document_loaded(existing.clone())
-                .with_error(ViewerError::file_read(Path::new(r"C:\docs\missing.md"), "missing")),
+            ViewerState::document_loaded(existing.clone()).with_error(ViewerError::file_read(
+                Path::new(r"C:\docs\missing.md"),
+                "missing",
+            )),
         );
 
         controller
@@ -2289,10 +2299,12 @@ mod tests {
         let dir = unique_test_dir("theme-start-restore-dark");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let settings_path = dir.join("settings.json");
-        SettingsFile::with_path(settings_path).save(&Settings {
-            theme: ThemePreference::Dark,
-            ..Settings::default()
-        }).expect("save test settings");
+        SettingsFile::with_path(settings_path)
+            .save(&Settings {
+                theme: ThemePreference::Dark,
+                ..Settings::default()
+            })
+            .expect("save test settings");
 
         let shell =
             crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
@@ -2705,15 +2717,17 @@ mod tests {
         let dir = unique_test_dir("font-settings-render-existing-doc");
         fs::create_dir_all(&dir).expect("create test dir");
         let settings_path = dir.join("settings.json");
-        SettingsFile::with_path(settings_path.clone()).save(&Settings {
-            theme: ThemePreference::Light,
-            body_font: Some(BodyFontSettings {
-                family_name: "Consolas".to_string(),
-                point_size_tenths: 110,
-            }),
-            external_editor: None,
-            recent_files: vec![],
-        }).expect("save test settings");
+        SettingsFile::with_path(settings_path.clone())
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: Some(BodyFontSettings {
+                    family_name: "Consolas".to_string(),
+                    point_size_tenths: 110,
+                }),
+                external_editor: None,
+                recent_files: vec![],
+            })
+            .expect("save test settings");
 
         let shell =
             crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
@@ -2763,15 +2777,17 @@ mod tests {
         let dir = unique_test_dir("font-settings-start-restore");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let settings_path = dir.join("settings.json");
-        SettingsFile::with_path(settings_path).save(&Settings {
-            theme: ThemePreference::Light,
-            body_font: Some(BodyFontSettings {
-                family_name: "Consolas".to_string(),
-                point_size_tenths: 110,
-            }),
-            external_editor: None,
-            recent_files: vec![],
-        }).expect("save test settings");
+        SettingsFile::with_path(settings_path)
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: Some(BodyFontSettings {
+                    family_name: "Consolas".to_string(),
+                    point_size_tenths: 110,
+                }),
+                external_editor: None,
+                recent_files: vec![],
+            })
+            .expect("save test settings");
 
         let shell =
             crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
@@ -2808,15 +2824,17 @@ mod tests {
         let dir = unique_test_dir("font-settings-theme-toggle-preserve");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let settings_path = dir.join("settings.json");
-        SettingsFile::with_path(settings_path.clone()).save(&Settings {
-            theme: ThemePreference::Light,
-            body_font: Some(BodyFontSettings {
-                family_name: "Consolas".to_string(),
-                point_size_tenths: 110,
-            }),
-            external_editor: None,
-            recent_files: vec![],
-        }).expect("save test settings");
+        SettingsFile::with_path(settings_path.clone())
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: Some(BodyFontSettings {
+                    family_name: "Consolas".to_string(),
+                    point_size_tenths: 110,
+                }),
+                external_editor: None,
+                recent_files: vec![],
+            })
+            .expect("save test settings");
 
         let shell =
             crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
@@ -2847,12 +2865,14 @@ mod tests {
     fn start_uses_default_font_when_settings_file_has_no_body_font() {
         let dir = unique_test_dir("font-settings-start-no-font");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
-        SettingsFile::with_path(dir.join("settings.json")).save(&Settings {
-            theme: ThemePreference::Dark,
-            body_font: None,
-            external_editor: None,
-            recent_files: vec![],
-        }).expect("save test settings");
+        SettingsFile::with_path(dir.join("settings.json"))
+            .save(&Settings {
+                theme: ThemePreference::Dark,
+                body_font: None,
+                external_editor: None,
+                recent_files: vec![],
+            })
+            .expect("save test settings");
 
         let shell =
             crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
@@ -3075,7 +3095,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for StubChildLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             self.launched.borrow_mut().push(path.to_path_buf());
             Ok(())
         }
@@ -3805,10 +3830,7 @@ mod tests {
         );
 
         let result = controller.open_in_external_editor();
-        assert!(
-            result.is_err(),
-            "launch failure must propagate as error"
-        );
+        assert!(result.is_err(), "launch failure must propagate as error");
         assert!(
             controller.state().is_error_visible(),
             "state must be ErrorVisible after launch failure (req 4.1)"
@@ -3834,10 +3856,7 @@ mod tests {
         );
 
         let result = controller.open_in_external_editor();
-        assert!(
-            result.is_err(),
-            "launch failure must propagate as error"
-        );
+        assert!(result.is_err(), "launch failure must propagate as error");
         assert!(
             !ui.close_requested(),
             "request_close must NOT be called on launch failure (req 4.2)"
@@ -3863,10 +3882,7 @@ mod tests {
         );
 
         let result = controller.open_in_external_editor();
-        assert!(
-            result.is_err(),
-            "launch failure must propagate as error"
-        );
+        assert!(result.is_err(), "launch failure must propagate as error");
         assert_eq!(
             controller.state().current_document(),
             Some(&doc),
@@ -4327,12 +4343,14 @@ mod tests {
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let settings_path = dir.join("settings.json");
         let existing_path = PathBuf::from(r"C:\Tools\code.exe");
-        SettingsFile::with_path(settings_path.clone()).save(&Settings {
-            theme: ThemePreference::Light,
-            body_font: None,
-            external_editor: Some(existing_path.clone()),
-            recent_files: vec![],
-        }).expect("save test settings");
+        SettingsFile::with_path(settings_path.clone())
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: None,
+                external_editor: Some(existing_path.clone()),
+                recent_files: vec![],
+            })
+            .expect("save test settings");
 
         let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Cancelled);
         let mut controller = AppController::new(
@@ -4704,10 +4722,7 @@ mod tests {
         controller_a
             .open_external_editor_setting()
             .expect("save should succeed");
-        assert_eq!(
-            controller_a.external_editor(),
-            &Some(selected_path.clone())
-        );
+        assert_eq!(controller_a.external_editor(), &Some(selected_path.clone()));
 
         let saved = SettingsFile::with_path(settings_path.clone()).load();
         assert_eq!(
@@ -4832,7 +4847,8 @@ mod tests {
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let settings_path = dir.join("settings.json");
         let selected_path = PathBuf::from(r"C:\Tools\notepadpp.exe");
-        let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path.clone()));
+        let dialog =
+            StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path.clone()));
         let mut controller = AppController::new(
             dialog.clone(),
             StubDocumentLoader::new(Vec::new()),
@@ -4953,7 +4969,8 @@ mod tests {
         let settings_path = dir.join("settings.json");
         let editor_path = PathBuf::from(r"C:\Tools\myeditor.exe");
 
-        let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Selected(editor_path.clone()));
+        let dialog =
+            StubFileDialog::with_editor_pick(OpenFileResult::Selected(editor_path.clone()));
         let mut controller_a = AppController::new(
             dialog,
             StubDocumentLoader::new(Vec::new()),
@@ -5108,5 +5125,4 @@ mod tests {
         assert_eq!(records[0].0, editor_b, "must use editor B from settings");
         assert_eq!(records[0].1, doc.path);
     }
-
 }

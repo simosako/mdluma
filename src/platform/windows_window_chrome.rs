@@ -115,7 +115,11 @@ pub fn set_window_corner_preference(hwnd: SciterWindowHandle, rounded: bool) {
         if hwnd.is_null() {
             return;
         }
-        let preference = if rounded { DWMWCP_ROUND } else { DWMWCP_DONOTROUND };
+        let preference = if rounded {
+            DWMWCP_ROUND
+        } else {
+            DWMWCP_DONOTROUND
+        };
         unsafe {
             DwmSetWindowAttribute(
                 hwnd,

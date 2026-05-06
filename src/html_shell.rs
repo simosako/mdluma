@@ -52,13 +52,25 @@ where
         let app_icon = self.assets.icon_data_url(IconName::App, icon_theme)?;
         let open_icon = self.assets.icon_data_url(IconName::Open, icon_theme)?;
         let search_icon = self.assets.icon_data_url(IconName::Search, icon_theme)?;
-        let search_prev_icon = self.assets.icon_data_url(IconName::SearchPrev, icon_theme)?;
-        let search_next_icon = self.assets.icon_data_url(IconName::SearchNext, icon_theme)?;
-        let search_close_icon = self.assets.icon_data_url(IconName::SearchClose, icon_theme)?;
+        let search_prev_icon = self
+            .assets
+            .icon_data_url(IconName::SearchPrev, icon_theme)?;
+        let search_next_icon = self
+            .assets
+            .icon_data_url(IconName::SearchNext, icon_theme)?;
+        let search_close_icon = self
+            .assets
+            .icon_data_url(IconName::SearchClose, icon_theme)?;
         let more_icon = self.assets.icon_data_url(IconName::More, icon_theme)?;
-        let window_minimize_icon = self.assets.icon_data_url(IconName::WindowMinimize, icon_theme)?;
-        let window_maximize_icon = self.assets.icon_data_url(IconName::WindowMaximize, icon_theme)?;
-        let window_close_icon = self.assets.icon_data_url(IconName::WindowClose, icon_theme)?;
+        let window_minimize_icon = self
+            .assets
+            .icon_data_url(IconName::WindowMinimize, icon_theme)?;
+        let window_maximize_icon = self
+            .assets
+            .icon_data_url(IconName::WindowMaximize, icon_theme)?;
+        let window_close_icon = self
+            .assets
+            .icon_data_url(IconName::WindowClose, icon_theme)?;
         let toggle_icon_url = self
             .assets
             .icon_data_url(model.theme.toggle_icon(), icon_theme)?;
@@ -836,9 +848,7 @@ mod tests {
         assert!(html.contains("data-current-file"));
         assert!(html.contains("data-current-file>No file open<"));
         assert!(html.contains("<header class=\"titlebar\">"));
-        assert!(html.contains(
-            "<div class=\"titlebar-drag-region\">"
-        ));
+        assert!(html.contains("<div class=\"titlebar-drag-region\">"));
         assert_eq!(occurrences(&html, "<header class=\"titlebar\""), 1);
         assert_eq!(occurrences(&html, "<div class=\"titlebar-spacer\""), 1);
         assert_eq!(occurrences(&html, "data-role=\"viewer-viewport\""), 1);
@@ -883,9 +893,7 @@ mod tests {
 
         assert!(html.contains("guide.md"));
         assert!(html.contains("data-current-file>guide.md<"));
-        assert!(html.contains(
-            "<div class=\"titlebar-drag-region\">"
-        ));
+        assert!(html.contains("<div class=\"titlebar-drag-region\">"));
         assert!(html.contains("<h1>Guide</h1><p>Read only.</p>"));
         assert!(html.contains("<section class=\"viewer-viewport\" data-role=\"viewer-viewport\">"));
         assert!(html.contains("<div class=\"viewport-body\" data-role=\"viewport-body\">"));
@@ -988,7 +996,8 @@ mod tests {
         assert!(html.contains("MDLuma could not read the selected Markdown file."));
         assert!(html.contains("data-error-overlay"));
         assert!(html.contains(r#"data-action="error-ok">OK<"#));
-        assert!(!html.contains(r#"<section class="error-area" data-error-area><p class="error-message">"#));
+        assert!(!html
+            .contains(r#"<section class="error-area" data-error-area><p class="error-message">"#));
         assert_eq!(occurrences(&html, "<header class=\"titlebar\""), 1);
         assert_eq!(occurrences(&html, "<div class=\"titlebar-spacer\""), 1);
         assert_eq!(occurrences(&html, "data-role=\"viewer-viewport\""), 1);

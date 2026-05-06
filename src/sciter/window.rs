@@ -175,20 +175,17 @@ fn parse_scripting_method_call_with(
         "open-file-requested" => Some(ViewerCommand::OpenFileRequested),
         "theme-toggle-requested" => Some(ViewerCommand::ThemeToggleRequested),
         "external-editor-requested" => Some(ViewerCommand::ExternalEditorRequested),
-        "external-editor-setting-requested" => {
-            Some(ViewerCommand::ExternalEditorSettingRequested)
-        }
+        "external-editor-setting-requested" => Some(ViewerCommand::ExternalEditorSettingRequested),
         "error-dismiss-requested" => Some(ViewerCommand::ErrorDismissRequested),
         "open-dropped-files" => {
             let paths: Vec<PathBuf> = argv.iter().filter_map(extract).map(PathBuf::from).collect();
             Some(ViewerCommand::OpenDroppedFiles(paths))
         }
-        "open-recent-file" => {
-            argv.first()
-                .and_then(extract)
-                .and_then(|s| s.parse::<usize>().ok())
-                .map(ViewerCommand::OpenRecentFile)
-        }
+        "open-recent-file" => argv
+            .first()
+            .and_then(extract)
+            .and_then(|s| s.parse::<usize>().ok())
+            .map(ViewerCommand::OpenRecentFile),
         _ => None,
     }
 }
@@ -497,7 +494,8 @@ fn parse_routed_command_from_behavior_event(
     }
 
     for element in [params.source, params.target] {
-        let Some(action_element) = resolve_element_with_attribute(api, element, "data-action") else {
+        let Some(action_element) = resolve_element_with_attribute(api, element, "data-action")
+        else {
             continue;
         };
         let Some(action) = api.get_attribute_by_name(action_element, "data-action") else {
@@ -508,7 +506,8 @@ fn parse_routed_command_from_behavior_event(
             if let Some(index_element) =
                 resolve_element_with_attribute(api, action_element, "data-recent-index")
             {
-                if let Some(index_str) = api.get_attribute_by_name(index_element, "data-recent-index")
+                if let Some(index_str) =
+                    api.get_attribute_by_name(index_element, "data-recent-index")
                 {
                     if let Ok(index) = index_str.parse::<usize>() {
                         return Some(RoutedCommand::Viewer(ViewerCommand::OpenRecentFile(index)));
@@ -1563,11 +1562,7 @@ mod tests {
     #[test]
     fn parse_scripting_method_call_maps_external_editor_setting_requested_to_command() {
         assert_eq!(
-            parse_scripting_method_call_with(
-                "external-editor-setting-requested",
-                &[],
-                |_| None
-            ),
+            parse_scripting_method_call_with("external-editor-setting-requested", &[], |_| None),
             Some(ViewerCommand::ExternalEditorSettingRequested)
         );
     }

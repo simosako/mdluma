@@ -3,11 +3,21 @@ use std::path::Path;
 use crate::errors::ViewerError;
 
 pub trait ViewerChildLauncher {
-    fn launch_path(&self, path: &Path, cascade_left: i32, cascade_top: i32) -> Result<(), ViewerError>;
+    fn launch_path(
+        &self,
+        path: &Path,
+        cascade_left: i32,
+        cascade_top: i32,
+    ) -> Result<(), ViewerError>;
 }
 
 impl ViewerChildLauncher for () {
-    fn launch_path(&self, _path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+    fn launch_path(
+        &self,
+        _path: &Path,
+        _cascade_left: i32,
+        _cascade_top: i32,
+    ) -> Result<(), ViewerError> {
         Ok(())
     }
 }
@@ -16,7 +26,12 @@ impl ViewerChildLauncher for () {
 pub struct ProcessViewerChildLauncher;
 
 impl ViewerChildLauncher for ProcessViewerChildLauncher {
-    fn launch_path(&self, path: &Path, cascade_left: i32, cascade_top: i32) -> Result<(), ViewerError> {
+    fn launch_path(
+        &self,
+        path: &Path,
+        cascade_left: i32,
+        cascade_top: i32,
+    ) -> Result<(), ViewerError> {
         let current_exe = std::env::current_exe().map_err(|error| {
             ViewerError::runtime_unavailable(format!(
                 "cannot determine executable path for child launch: {error}"
@@ -62,7 +77,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for RecordingLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             self.launched.lock().unwrap().push(path.to_path_buf());
             Ok(())
         }
@@ -74,7 +94,12 @@ mod tests {
     }
 
     impl ViewerChildLauncher for FailingLauncher {
-        fn launch_path(&self, path: &Path, _cascade_left: i32, _cascade_top: i32) -> Result<(), ViewerError> {
+        fn launch_path(
+            &self,
+            path: &Path,
+            _cascade_left: i32,
+            _cascade_top: i32,
+        ) -> Result<(), ViewerError> {
             if path == self.fail_on {
                 Err(ViewerError::runtime_unavailable(&self.error_message))
             } else {

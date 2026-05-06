@@ -431,9 +431,7 @@ mod tests {
             external_editor: None,
             recent_files: vec![],
         };
-        settings_file
-            .save(&save_settings)
-            .expect("save settings");
+        settings_file.save(&save_settings).expect("save settings");
 
         let loaded = settings_file.load();
         assert_eq!(loaded, save_settings);
@@ -454,7 +452,7 @@ mod tests {
                     point_size_tenths: 110,
                 }),
                 external_editor: None,
-            recent_files: vec![],
+                recent_files: vec![],
             })
             .expect("save settings");
 
@@ -534,9 +532,7 @@ mod tests {
             external_editor: Some(PathBuf::from(r"C:\Tools\vscode\Code.exe")),
             recent_files: vec![],
         };
-        settings_file
-            .save(&save_settings)
-            .expect("save settings");
+        settings_file.save(&save_settings).expect("save settings");
 
         let loaded = settings_file.load();
         assert_eq!(loaded, save_settings);
@@ -557,9 +553,7 @@ mod tests {
             external_editor: Some(PathBuf::from(r"C:\Tools\notepadpp\notepad++.exe")),
             recent_files: vec![],
         };
-        settings_file
-            .save(&save_settings)
-            .expect("save settings");
+        settings_file.save(&save_settings).expect("save settings");
 
         let loaded = settings_file.load();
         assert_eq!(loaded, save_settings);
