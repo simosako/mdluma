@@ -6,10 +6,10 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWLP_WNDPROC, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE, WM_DROPFILES,
-    WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_SYSMENU,
+    GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED,
+    WM_APP, WM_CLOSE, WM_DROPFILES, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
 #[cfg(windows)]
@@ -463,7 +463,8 @@ impl SciterApi {
         saved_geometry: Option<&crate::settings::WindowGeometry>,
     ) -> Result<SciterWindowHandle, SciterRuntimeError> {
         let (cascade_left, cascade_top) = read_window_cascade_offset();
-        let mut frame = if let Some(geo) = saved_geometry {
+        let safe_geometry = saved_geometry.filter(|geo| is_on_screen(geo));
+        let mut frame = if let Some(geo) = safe_geometry {
             SciterRect {
                 left: geo.left + cascade_left,
                 top: geo.top + cascade_top,
@@ -1171,6 +1172,25 @@ fn read_window_cascade_offset() -> (i32, i32) {
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(0);
     (left, top)
+}
+
+#[cfg(windows)]
+fn is_on_screen(geo: &crate::settings::WindowGeometry) -> bool {
+    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    if screen_w <= 0 || screen_h <= 0 {
+        return true;
+    }
+    let visible_w = (geo.right - geo.left).min(screen_w);
+    let visible_h = (geo.bottom - geo.top).min(screen_h);
+    let overlaps = geo.left < screen_w && geo.left + visible_w > 0
+        && geo.top < screen_h && geo.top + visible_h > 0;
+    overlaps
+}
+
+#[cfg(not(windows))]
+fn is_on_screen(_geo: &crate::settings::WindowGeometry) -> bool {
+    true
 }
 
 #[cfg(windows)]
