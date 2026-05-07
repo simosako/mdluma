@@ -2235,7 +2235,7 @@ mod tests {
         assert!(html.contains(env!("CARGO_PKG_VERSION")));
         assert!(html.contains(env!("GIT_COMMIT_HASH")));
         assert!(html.contains("Akira Shimosako"));
-        assert!(html.contains("All rights reserved."));
+        assert!(html.contains("Licensed under MIT OR Apache-2.0."));
         assert!(html.contains("Terra Informatica"));
         assert!(html.contains("sciter.com"));
     }

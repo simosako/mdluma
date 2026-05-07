@@ -37,6 +37,10 @@ fn main() {
     resource.set("FileDescription", "MDLuma Markdown Viewer");
     resource.set("ProductName", "MDLuma");
     resource.set("OriginalFilename", "mdluma.exe");
+    resource.set(
+        "LegalCopyright",
+        "Copyright © 2026 Akira Shimosako. Licensed under MIT OR Apache-2.0.",
+    );
     resource.compile().expect("compile Windows resources");
 
     let profile_dir = profile_output_dir();
