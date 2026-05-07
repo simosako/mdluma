@@ -160,8 +160,10 @@ pub struct SciterApi {
     #[cfg(windows)]
     sciter_eval_element_script: SciterEvalElementScriptFn,
     #[cfg(windows)]
+    #[allow(dead_code)]
     sciter_select_elements: SciterSelectElementsFn,
     #[cfg(windows)]
+    #[allow(dead_code)]
     sciter_set_style_attribute: SciterSetStyleAttributeFn,
     #[cfg(windows)]
     sciter_use_element: SciterElementRefFn,
@@ -934,6 +936,7 @@ impl SciterApi {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn eval_document_script_with_result(
         &self,
         window: SciterWindowHandle,
@@ -980,6 +983,7 @@ impl SciterApi {
     }
 
     #[cfg(windows)]
+    #[allow(dead_code)]
     pub(crate) fn set_element_style(
         &self,
         window: SciterWindowHandle,
