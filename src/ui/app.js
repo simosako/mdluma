@@ -22,7 +22,6 @@ function requestThemeToggle() {
   if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
     return;
   }
-
   Window.this.xcall("theme-toggle-requested");
 }
 

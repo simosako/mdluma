@@ -124,7 +124,7 @@ impl UiAssets for EmbeddedUiAssets {
     fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError> {
         let svg = name.embedded_svg(theme);
         let stripped = svg.replace(" xmlns=\"http://www.w3.org/2000/svg\"", "");
-        let encoded = stripped.replace('"', "%22");
+        let encoded = stripped.replace('#', "%23").replace('"', "%22");
         Ok(format!("data:image/svg+xml;charset=utf-8,{encoded}"))
     }
 }

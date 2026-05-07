@@ -1,5 +1,5 @@
 use crate::settings::BodyFontSettings;
-use crate::ui::{IconName, Theme, UiAssets, UiTextAsset};
+use crate::ui::{IconName, IconTheme, Theme, UiAssets, UiTextAsset};
 use crate::{ViewerError, ViewerState};
 use std::path::PathBuf;
 
@@ -50,30 +50,80 @@ where
 
         let icon_theme = model.theme.icon_theme();
         let app_icon = self.assets.icon_data_url(IconName::App, icon_theme)?;
+        let app_icon_light = self.assets.icon_data_url(IconName::App, IconTheme::Light)?;
+        let app_icon_dark = self.assets.icon_data_url(IconName::App, IconTheme::Dark)?;
         let open_icon = self.assets.icon_data_url(IconName::Open, icon_theme)?;
+        let open_icon_light = self.assets.icon_data_url(IconName::Open, IconTheme::Light)?;
+        let open_icon_dark = self.assets.icon_data_url(IconName::Open, IconTheme::Dark)?;
         let search_icon = self.assets.icon_data_url(IconName::Search, icon_theme)?;
+        let search_icon_light = self.assets.icon_data_url(IconName::Search, IconTheme::Light)?;
+        let search_icon_dark = self.assets.icon_data_url(IconName::Search, IconTheme::Dark)?;
         let search_prev_icon = self
             .assets
             .icon_data_url(IconName::SearchPrev, icon_theme)?;
+        let search_prev_icon_light = self
+            .assets
+            .icon_data_url(IconName::SearchPrev, IconTheme::Light)?;
+        let search_prev_icon_dark = self
+            .assets
+            .icon_data_url(IconName::SearchPrev, IconTheme::Dark)?;
         let search_next_icon = self
             .assets
             .icon_data_url(IconName::SearchNext, icon_theme)?;
+        let search_next_icon_light = self
+            .assets
+            .icon_data_url(IconName::SearchNext, IconTheme::Light)?;
+        let search_next_icon_dark = self
+            .assets
+            .icon_data_url(IconName::SearchNext, IconTheme::Dark)?;
         let search_close_icon = self
             .assets
             .icon_data_url(IconName::SearchClose, icon_theme)?;
+        let search_close_icon_light = self
+            .assets
+            .icon_data_url(IconName::SearchClose, IconTheme::Light)?;
+        let search_close_icon_dark = self
+            .assets
+            .icon_data_url(IconName::SearchClose, IconTheme::Dark)?;
         let more_icon = self.assets.icon_data_url(IconName::More, icon_theme)?;
+        let more_icon_light = self.assets.icon_data_url(IconName::More, IconTheme::Light)?;
+        let more_icon_dark = self.assets.icon_data_url(IconName::More, IconTheme::Dark)?;
         let window_minimize_icon = self
             .assets
             .icon_data_url(IconName::WindowMinimize, icon_theme)?;
+        let window_minimize_icon_light = self
+            .assets
+            .icon_data_url(IconName::WindowMinimize, IconTheme::Light)?;
+        let window_minimize_icon_dark = self
+            .assets
+            .icon_data_url(IconName::WindowMinimize, IconTheme::Dark)?;
         let window_maximize_icon = self
             .assets
             .icon_data_url(IconName::WindowMaximize, icon_theme)?;
+        let window_maximize_icon_light = self
+            .assets
+            .icon_data_url(IconName::WindowMaximize, IconTheme::Light)?;
+        let window_maximize_icon_dark = self
+            .assets
+            .icon_data_url(IconName::WindowMaximize, IconTheme::Dark)?;
         let window_close_icon = self
             .assets
             .icon_data_url(IconName::WindowClose, icon_theme)?;
+        let window_close_icon_light = self
+            .assets
+            .icon_data_url(IconName::WindowClose, IconTheme::Light)?;
+        let window_close_icon_dark = self
+            .assets
+            .icon_data_url(IconName::WindowClose, IconTheme::Dark)?;
         let toggle_icon_url = self
             .assets
             .icon_data_url(model.theme.toggle_icon(), icon_theme)?;
+        let toggle_icon_url_light = self
+            .assets
+            .icon_data_url(IconName::Moon, IconTheme::Light)?;
+        let toggle_icon_url_dark = self
+            .assets
+            .icon_data_url(IconName::Sun, IconTheme::Dark)?;
         let file_name = current_file_name(model.state, model.recent_files);
         let base_href = current_document_base_href(model.state);
         let content = content_html(model.state, model.resource_policy);
@@ -93,17 +143,39 @@ where
             .replace("{{BODY_FONT_STYLE}}", &body_font_style)
             .replace("{{SCRIPT}}", &script)
             .replace("{{APP_ICON}}", &app_icon)
+            .replace("{{APP_ICON_LIGHT}}", &app_icon_light)
+            .replace("{{APP_ICON_DARK}}", &app_icon_dark)
             .replace("{{OPEN_ICON}}", &open_icon)
+            .replace("{{OPEN_ICON_LIGHT}}", &open_icon_light)
+            .replace("{{OPEN_ICON_DARK}}", &open_icon_dark)
             .replace("{{SEARCH_ICON}}", &search_icon)
+            .replace("{{SEARCH_ICON_LIGHT}}", &search_icon_light)
+            .replace("{{SEARCH_ICON_DARK}}", &search_icon_dark)
             .replace("{{SEARCH_PREV_ICON}}", &search_prev_icon)
+            .replace("{{SEARCH_PREV_ICON_LIGHT}}", &search_prev_icon_light)
+            .replace("{{SEARCH_PREV_ICON_DARK}}", &search_prev_icon_dark)
             .replace("{{SEARCH_NEXT_ICON}}", &search_next_icon)
+            .replace("{{SEARCH_NEXT_ICON_LIGHT}}", &search_next_icon_light)
+            .replace("{{SEARCH_NEXT_ICON_DARK}}", &search_next_icon_dark)
             .replace("{{SEARCH_CLOSE_ICON}}", &search_close_icon)
+            .replace("{{SEARCH_CLOSE_ICON_LIGHT}}", &search_close_icon_light)
+            .replace("{{SEARCH_CLOSE_ICON_DARK}}", &search_close_icon_dark)
             .replace("{{MORE_ICON}}", &more_icon)
+            .replace("{{MORE_ICON_LIGHT}}", &more_icon_light)
+            .replace("{{MORE_ICON_DARK}}", &more_icon_dark)
             .replace("{{WINDOW_MINIMIZE_ICON}}", &window_minimize_icon)
+            .replace("{{WINDOW_MINIMIZE_ICON_LIGHT}}", &window_minimize_icon_light)
+            .replace("{{WINDOW_MINIMIZE_ICON_DARK}}", &window_minimize_icon_dark)
             .replace("{{WINDOW_MAXIMIZE_ICON}}", &window_maximize_icon)
+            .replace("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", &window_maximize_icon_light)
+            .replace("{{WINDOW_MAXIMIZE_ICON_DARK}}", &window_maximize_icon_dark)
             .replace("{{WINDOW_CLOSE_ICON}}", &window_close_icon)
+            .replace("{{WINDOW_CLOSE_ICON_LIGHT}}", &window_close_icon_light)
+            .replace("{{WINDOW_CLOSE_ICON_DARK}}", &window_close_icon_dark)
             .replace("{{THEME_ATTR}}", model.theme.theme_attr())
             .replace("{{THEME_ICON}}", &toggle_icon_url)
+            .replace("{{THEME_ICON_LIGHT}}", &toggle_icon_url_light)
+            .replace("{{THEME_ICON_DARK}}", &toggle_icon_url_dark)
             .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
             .replace("{{BUILD_NUMBER}}", env!("GIT_COMMIT_HASH"))
             .replace("{{SCITER_ATTRIBUTION}}", "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.")
@@ -1603,8 +1675,10 @@ mod tests {
             .expect("render dark shell");
 
         assert!(html.contains("<html theme=\"dark\" window-frame=\"extended\""));
-        assert!(html.contains("fill=%22#D1D5DB%22"));
-        assert!(!html.contains("fill=%22#111827%22"));
+        assert!(html.contains("data-icon-light"));
+        assert!(html.contains("data-icon-dark"));
+        assert!(html.contains("fill=%22%23D1D5DB%22"));
+        assert!(html.contains("fill=%22%23111827%22"));
     }
 
     #[test]
@@ -1623,8 +1697,10 @@ mod tests {
             .expect("render light shell");
 
         assert!(html.contains("<html theme=\"light\" window-frame=\"extended\""));
-        assert!(html.contains("fill=%22#111827%22"));
-        assert!(!html.contains("fill=%22#D1D5DB%22"));
+        assert!(html.contains("data-icon-light"));
+        assert!(html.contains("data-icon-dark"));
+        assert!(html.contains("fill=%22%23111827%22"));
+        assert!(html.contains("fill=%22%23D1D5DB%22"));
     }
 
     #[test]

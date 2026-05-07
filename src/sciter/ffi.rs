@@ -882,6 +882,42 @@ impl SciterApi {
         }
     }
 
+    #[cfg(windows)]
+    pub(crate) fn eval_document_script(
+        &self,
+        window: SciterWindowHandle,
+        script: &str,
+    ) -> Result<(), SciterRuntimeError> {
+        let mut root = std::ptr::null_mut();
+        let root_status = unsafe { (self.sciter_get_root_element)(window, &mut root) };
+        if root_status != SCDOM_OK || root.is_null() {
+            return Err(SciterRuntimeError::ApiUnavailable {
+                message: format!(
+                    "SciterGetRootElement failed with status {root_status} while applying theme"
+                ),
+            });
+        }
+
+        let wide_script: Vec<u16> = script.encode_utf16().collect();
+        let eval_status = unsafe {
+            (self.sciter_eval_element_script)(
+                root,
+                wide_script.as_ptr(),
+                wide_script.len() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if eval_status == SCDOM_OK {
+            Ok(())
+        } else {
+            Err(SciterRuntimeError::ApiUnavailable {
+                message: format!(
+                    "SciterEvalElementScript failed with status {eval_status} while applying theme"
+                ),
+            })
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn for_tests(
         sciter_version: SciterVersionFn,

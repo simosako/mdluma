@@ -13,21 +13,21 @@
     <header class="titlebar">
       <div class="titlebar-drag-region" role="window-caption">
         <div class="titlebar-brand" role="window-caption" data-role="titlebar-brand">
-          <img class="app-logo" alt="" src="{{APP_ICON}}">
+          <img class="app-logo" alt="" src="{{APP_ICON}}" data-icon-light="{{APP_ICON_LIGHT}}" data-icon-dark="{{APP_ICON_DARK}}">
           <div class="app-name">{{APP_NAME}}</div>
         </div>
         <div class="file-name" data-current-file>{{CURRENT_FILE_NAME}}</div>
       </div>
       <div class="titlebar-controls" data-role="future-controls">
-        <button type="button" title="Open Markdown file" aria-label="Open Markdown file" data-action="open-file"><img class="icon" alt="" src="{{OPEN_ICON}}"></button>
-        <button type="button" title="Search" aria-label="Search" data-action="search"><img class="icon" alt="" src="{{SEARCH_ICON}}"></button>
-        <button type="button" title="Toggle theme" aria-label="Toggle theme" data-action="theme"><img class="icon" alt="" src="{{THEME_ICON}}"></button>
-        <button type="menu" title="More options" aria-label="More options" data-action="more"><img class="icon" alt="" src="{{MORE_ICON}}"><menu.popup><li data-action="font">Font</li><li data-action="external-editor" {{EXTERNAL_EDITOR_DISABLED}}>External Editor</li><li data-action="external-editor-setting">External Editor Setting</li><li data-action="about">About</li></menu></button>
+        <button type="button" title="Open Markdown file" aria-label="Open Markdown file" data-action="open-file"><img class="icon" alt="" src="{{OPEN_ICON}}" data-icon-light="{{OPEN_ICON_LIGHT}}" data-icon-dark="{{OPEN_ICON_DARK}}"></button>
+        <button type="button" title="Search" aria-label="Search" data-action="search"><img class="icon" alt="" src="{{SEARCH_ICON}}" data-icon-light="{{SEARCH_ICON_LIGHT}}" data-icon-dark="{{SEARCH_ICON_DARK}}"></button>
+        <button type="button" title="Toggle theme" aria-label="Toggle theme" data-action="theme"><img class="icon" alt="" src="{{THEME_ICON}}" data-theme-icon data-icon-light="{{THEME_ICON_LIGHT}}" data-icon-dark="{{THEME_ICON_DARK}}"></button>
+        <button type="menu" title="More options" aria-label="More options" data-action="more"><img class="icon" alt="" src="{{MORE_ICON}}" data-icon-light="{{MORE_ICON_LIGHT}}" data-icon-dark="{{MORE_ICON_DARK}}"><menu.popup><li data-action="font">Font</li><li data-action="external-editor" {{EXTERNAL_EDITOR_DISABLED}}>External Editor</li><li data-action="external-editor-setting">External Editor Setting</li><li data-action="about">About</li></menu></button>
       </div>
       <div class="titlebar-controls window-controls" data-role="window-controls">
-        <button type="button" role="window-minimize" title="Minimize window" aria-label="Minimize window" data-action="window-minimize"><img class="icon" alt="" src="{{WINDOW_MINIMIZE_ICON}}"></button>
-        <button type="button" role="window-maximize" title="Maximize or restore window" aria-label="Maximize or restore window" data-action="window-toggle-maximize"><img class="icon" alt="" src="{{WINDOW_MAXIMIZE_ICON}}"></button>
-        <button type="button" role="window-close" class="close" title="Close window" aria-label="Close window" data-action="window-close"><img class="icon" alt="" src="{{WINDOW_CLOSE_ICON}}"></button>
+        <button type="button" role="window-minimize" title="Minimize window" aria-label="Minimize window" data-action="window-minimize"><img class="icon" alt="" src="{{WINDOW_MINIMIZE_ICON}}" data-icon-light="{{WINDOW_MINIMIZE_ICON_LIGHT}}" data-icon-dark="{{WINDOW_MINIMIZE_ICON_DARK}}"></button>
+        <button type="button" role="window-maximize" title="Maximize or restore window" aria-label="Maximize or restore window" data-action="window-toggle-maximize"><img class="icon" alt="" src="{{WINDOW_MAXIMIZE_ICON}}" data-icon-light="{{WINDOW_MAXIMIZE_ICON_LIGHT}}" data-icon-dark="{{WINDOW_MAXIMIZE_ICON_DARK}}"></button>
+        <button type="button" role="window-close" class="close" title="Close window" aria-label="Close window" data-action="window-close"><img class="icon" alt="" src="{{WINDOW_CLOSE_ICON}}" data-icon-light="{{WINDOW_CLOSE_ICON_LIGHT}}" data-icon-dark="{{WINDOW_CLOSE_ICON_DARK}}"></button>
       </div>
     </header>
     <div class="titlebar-spacer" aria-hidden="true"></div>
@@ -36,13 +36,13 @@
         <input type="text" class="search-input" data-search-input placeholder="Search..." aria-label="Search text">
         <button type="button" class="search-case-btn" data-search-case-sensitive title="Match case" aria-pressed="false">Aa</button>
         <button type="button" class="search-nav-btn" data-search-prev title="Previous match" aria-label="Previous match">
-          <img class="search-nav-icon" alt="" src="{{SEARCH_PREV_ICON}}">
+          <img class="search-nav-icon" alt="" src="{{SEARCH_PREV_ICON}}" data-icon-light="{{SEARCH_PREV_ICON_LIGHT}}" data-icon-dark="{{SEARCH_PREV_ICON_DARK}}">
         </button>
         <button type="button" class="search-nav-btn" data-search-next title="Next match" aria-label="Next match">
-          <img class="search-nav-icon" alt="" src="{{SEARCH_NEXT_ICON}}">
+          <img class="search-nav-icon" alt="" src="{{SEARCH_NEXT_ICON}}" data-icon-light="{{SEARCH_NEXT_ICON_LIGHT}}" data-icon-dark="{{SEARCH_NEXT_ICON_DARK}}">
         </button>
         <button type="button" class="search-close-btn" data-search-close title="Close search" aria-label="Close search">
-          <img class="search-close-icon" alt="" src="{{SEARCH_CLOSE_ICON}}">
+          <img class="search-close-icon" alt="" src="{{SEARCH_CLOSE_ICON}}" data-icon-light="{{SEARCH_CLOSE_ICON_LIGHT}}" data-icon-dark="{{SEARCH_CLOSE_ICON_DARK}}">
         </button>
       </div>
       <div class="search-info" data-search-info></div>
@@ -57,7 +57,7 @@
     <div class="about-overlay" data-about-overlay hidden>
       <section class="about-dialog">
         <header>
-          <img alt="" src="{{APP_ICON}}">
+          <img alt="" src="{{APP_ICON}}" data-icon-light="{{APP_ICON_LIGHT}}" data-icon-dark="{{APP_ICON_DARK}}">
           <div>
             <strong>MDLuma</strong>
             <small>Version {{VERSION}} ({{BUILD_NUMBER}})</small>

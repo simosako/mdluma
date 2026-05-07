@@ -50,6 +50,11 @@ pub trait ViewerUi {
     fn run_event_loop(&mut self) -> Result<(), ViewerError>;
     fn request_close(&mut self) -> Result<(), ViewerError>;
 
+    fn apply_theme(&mut self, theme: Theme) -> Result<(), ViewerError> {
+        let _ = theme;
+        Ok(())
+    }
+
     fn native_window_handle(&self) -> Option<SciterWindowHandle> {
         None
     }
@@ -76,6 +81,10 @@ impl ViewerUi for Rc<RefCell<SciterWindow>> {
 
     fn request_close(&mut self) -> Result<(), ViewerError> {
         self.borrow_mut().request_close()
+    }
+
+    fn apply_theme(&mut self, theme: Theme) -> Result<(), ViewerError> {
+        self.borrow_mut().apply_theme(theme)
     }
 
     #[cfg(windows)]
@@ -732,6 +741,50 @@ impl ViewerUi for SciterWindow {
 
     fn request_close(&mut self) -> Result<(), ViewerError> {
         self.window_chrome.close(self.window)
+    }
+
+    fn apply_theme(&mut self, theme: Theme) -> Result<(), ViewerError> {
+        #[cfg(windows)]
+        {
+            let theme_attr = theme.theme_attr();
+            let script = format!(
+                r#"(function() {{
+  document.attributes["theme"] = "{theme_attr}";
+  var groups = [
+    "[data-role='future-controls'] img",
+    "[data-role='window-controls'] img",
+    ".search-panel img",
+    ".about-dialog img"
+  ];
+
+  for (var g = 0; g < groups.length; g++) {{
+    var icons = document.$$(groups[g]);
+    for (var i = 0; i < icons.length; i++) {{
+      var lightIcon = icons[i].getAttribute("data-icon-light");
+      var darkIcon = icons[i].getAttribute("data-icon-dark");
+      if (!lightIcon || !darkIcon) {{
+        continue;
+      }}
+
+      var iconUrl = icons[i].getAttribute("data-icon-{theme_attr}");
+      if (iconUrl) {{
+        icons[i].src = iconUrl;
+      }}
+    }}
+  }}
+}})();"#
+            );
+            self.api
+                .eval_document_script(self.window, &script)
+                .map_err(|error| ViewerError::ui(error.operator_diagnostic()))?;
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = theme;
+        }
+
+        Ok(())
     }
 
     #[cfg(windows)]

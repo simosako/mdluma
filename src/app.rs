@@ -247,22 +247,8 @@ where
 
     fn toggle_theme(&mut self) -> Result<(), ViewerError> {
         self.theme = self.theme.toggle();
+        self.ui.apply_theme(self.theme)?;
         let _ = self.settings_file.save(&self.build_settings());
-
-        let next_state = if self.state.is_error_visible() && self.state.current_document().is_some()
-        {
-            self.state.clone().dismiss_error()
-        } else {
-            self.state.clone()
-        };
-
-        let html = self.render_state_html(&next_state)?;
-        if next_state.is_no_document() {
-            self.ui.show_initial(&html)?;
-        } else {
-            self.ui.show_document(&html)?;
-        }
-        self.state = next_state;
         Ok(())
     }
 
@@ -1412,11 +1398,11 @@ mod tests {
 
         controller
             .handle_viewer_command(ViewerCommand::ThemeToggleRequested)
-            .expect("theme toggle should dismiss overlay error and redraw document");
+            .expect("theme toggle should succeed");
 
-        assert!(!controller.state().is_error_visible());
+        assert!(controller.state().is_error_visible());
         assert_eq!(controller.state().current_document(), Some(&existing));
-        assert_eq!(ui.document_html(), vec!["<html>themed</html>".to_string()]);
+        assert!(ui.initial_html().is_empty());
     }
 
     #[test]
@@ -2279,7 +2265,7 @@ mod tests {
     }
 
     #[test]
-    fn theme_toggle_requested_toggles_theme_and_redraws_shell() {
+    fn theme_toggle_requested_toggles_theme_and_saves_settings() {
         use crate::ui::Theme;
         let shell =
             RecordingHtmlShell::new(vec![Ok("<html theme=\"dark\">toggled</html>".to_string())]);
@@ -2297,10 +2283,8 @@ mod tests {
             .handle_viewer_command(ViewerCommand::ThemeToggleRequested)
             .expect("theme toggle should succeed");
 
-        assert_eq!(
-            ui.initial_html(),
-            vec!["<html theme=\"dark\">toggled</html>".to_string()]
-        );
+        assert!(ui.initial_html().is_empty());
+        assert!(ui.document_html().is_empty());
     }
 
     #[test]
@@ -2419,7 +2403,7 @@ mod tests {
     }
 
     #[test]
-    fn theme_toggle_light_to_dark_to_light_updates_shell_output_with_correct_theme_attr() {
+    fn theme_toggle_light_to_dark_to_light_saves_settings_without_reloading_html() {
         let dir = unique_test_dir("theme-toggle-shell-output");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
         let shell =
@@ -2440,38 +2424,16 @@ mod tests {
             initial_html.contains("theme=\"light\""),
             "default theme should be light in initial output"
         );
-        assert!(!initial_html.contains("theme=\"dark\""));
 
         controller
             .handle_viewer_command(ViewerCommand::ThemeToggleRequested)
             .expect("first toggle should succeed");
-        let initials_after_first_toggle = ui.initial_html();
-        let dark_html = initials_after_first_toggle
-            .last()
-            .expect("html after first toggle");
-        assert!(
-            dark_html.contains("theme=\"dark\""),
-            "first toggle should produce dark theme output"
-        );
-        assert!(
-            dark_html.contains("fill=%22#D1D5DB%22"),
-            "dark theme should use dark icon assets"
-        );
-        assert!(!dark_html.contains("fill=%22#111827%22"));
+        assert_eq!(ui.initial_html().len(), 1, "no additional HTML on toggle");
 
         controller
             .handle_viewer_command(ViewerCommand::ThemeToggleRequested)
             .expect("second toggle should succeed");
-        let initials = ui.initial_html();
-        let light_html = initials.last().expect("html after second toggle");
-        assert!(
-            light_html.contains("theme=\"light\""),
-            "second toggle should produce light theme output"
-        );
-        assert!(
-            light_html.contains("fill=%22#111827%22"),
-            "light theme should use light icon assets"
-        );
+        assert_eq!(ui.initial_html().len(), 1, "no additional HTML on second toggle");
     }
 
     #[test]
@@ -2521,7 +2483,7 @@ mod tests {
             "file opened while dark theme is active should render with dark theme"
         );
         assert!(
-            html.contains("fill=%22#D1D5DB%22"),
+            html.contains("fill=%22%23D1D5DB%22"),
             "file opened in dark theme should use dark icon assets"
         );
         assert!(!html.contains("theme=\"light\""));
@@ -2583,7 +2545,7 @@ mod tests {
             "dropped file while dark theme is active should render with dark theme"
         );
         assert!(
-            html.contains("fill=%22#D1D5DB%22"),
+            html.contains("fill=%22%23D1D5DB%22"),
             "dropped file in dark theme should use dark icon assets"
         );
         assert!(!html.contains("theme=\"light\""));
