@@ -75,6 +75,7 @@ where
             .assets
             .icon_data_url(model.theme.toggle_icon(), icon_theme)?;
         let file_name = current_file_name(model.state);
+        let base_href = current_document_base_href(model.state);
         let content = content_html(model.state, model.resource_policy);
         let error = error_html(model.state);
         let error_overlay = error_overlay_html(model.state);
@@ -85,6 +86,7 @@ where
         let html = template
             .replace("{{APP_NAME}}", &escape_html(model.app_name))
             .replace("{{CURRENT_FILE_NAME}}", &escape_html(file_name))
+            .replace("{{BASE_HREF}}", &base_href)
             .replace("{{CONTENT}}", &content)
             .replace("{{ERROR}}", &error)
             .replace("{{STYLES}}", &styles)
@@ -147,6 +149,140 @@ fn current_file_name(state: &ViewerState) -> &str {
         .unwrap_or("No file open")
 }
 
+fn current_document_base_href(state: &ViewerState) -> String {
+    let Some(document) = state.current_document() else {
+        return String::new();
+    };
+
+    let Some(mut href) = file_url_from_directory(&document.base_dir) else {
+        return String::new();
+    };
+
+    if !href.ends_with('/') {
+        href.push('/');
+    }
+
+    format!("<base href=\"{}\">", escape_html(&href))
+}
+
+fn file_url_from_directory(path: &std::path::Path) -> Option<String> {
+    #[cfg(windows)]
+    let normalized = normalize_windows_path_for_file_url(path)?;
+    #[cfg(not(windows))]
+    let normalized = path.to_str()?.replace('\\', "/");
+
+    if normalized.starts_with("//") {
+        return Some(format!("file:{}", encode_file_url_path(&normalized)));
+    }
+
+    if normalized.len() >= 2 && normalized.as_bytes()[1] == b':' {
+        return Some(format!("file:///{}", encode_file_url_path(&normalized)));
+    }
+
+    if normalized.starts_with('/') {
+        return Some(format!("file://{}", encode_file_url_path(&normalized)));
+    }
+
+    Some(format!("file:///{}", encode_file_url_path(&normalized)))
+}
+
+#[cfg(windows)]
+fn normalize_windows_path_for_file_url(path: &std::path::Path) -> Option<String> {
+    use std::path::{Component, Prefix};
+
+    let mut components = path.components();
+    let mut normalized = String::new();
+
+    if let Some(Component::Prefix(prefix_component)) = components.next() {
+        match prefix_component.kind() {
+            Prefix::VerbatimDisk(drive) | Prefix::Disk(drive) => {
+                normalized.push((drive as char).to_ascii_uppercase());
+                normalized.push(':');
+            }
+            Prefix::VerbatimUNC(server, share) | Prefix::UNC(server, share) => {
+                normalized.push_str("//");
+                normalized.push_str(&server.to_string_lossy());
+                normalized.push('/');
+                normalized.push_str(&share.to_string_lossy());
+            }
+            Prefix::Verbatim(value) => {
+                normalized.push_str(&value.to_string_lossy());
+            }
+            Prefix::DeviceNS(value) => {
+                normalized.push_str(&value.to_string_lossy());
+            }
+        }
+    } else {
+        normalized.push_str(path.to_str()?);
+    }
+
+    for component in components {
+        match component {
+            Component::RootDir => {
+                if !normalized.ends_with('/') {
+                    normalized.push('/');
+                }
+            }
+            Component::Normal(segment) => {
+                if !normalized.is_empty() && !normalized.ends_with('/') {
+                    normalized.push('/');
+                }
+                normalized.push_str(&segment.to_string_lossy());
+            }
+            Component::CurDir => {
+                if !normalized.is_empty() && !normalized.ends_with('/') {
+                    normalized.push('/');
+                }
+                normalized.push('.');
+            }
+            Component::ParentDir => {
+                if !normalized.is_empty() && !normalized.ends_with('/') {
+                    normalized.push('/');
+                }
+                normalized.push_str("..");
+            }
+            Component::Prefix(_) => {}
+        }
+    }
+
+    Some(normalized)
+}
+
+fn encode_file_url_path(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        let safe = matches!(
+            byte,
+            b'A'..=b'Z'
+                | b'a'..=b'z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'.'
+                | b'_'
+                | b'~'
+                | b'/'
+                | b':'
+        );
+
+        if safe {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(hex_upper((byte >> 4) & 0x0F));
+            encoded.push(hex_upper(byte & 0x0F));
+        }
+    }
+    encoded
+}
+
+fn hex_upper(nibble: u8) -> char {
+    match nibble {
+        0..=9 => (b'0' + nibble) as char,
+        10..=15 => (b'A' + (nibble - 10)) as char,
+        _ => '0',
+    }
+}
+
 fn body_font_css(body_font: Option<&BodyFontSettings>) -> String {
     match body_font {
         Some(settings) => {
@@ -185,8 +321,9 @@ fn content_html(state: &ViewerState, resource_policy: ResourcePolicy) -> String 
         .map(|document| document.html_body.as_str())
         .unwrap_or("<p class=\"empty-state\">Open Markdown file to start reading.</p>");
 
+    let base_dir = state.current_document().map(|document| document.base_dir.as_path());
     let content = match resource_policy {
-        ResourcePolicy::LocalOnly => sanitize_body_html(content),
+        ResourcePolicy::LocalOnly => sanitize_body_html(content, base_dir),
     };
 
     if state.current_document().is_some() {
@@ -242,7 +379,7 @@ fn ensure_local_only(html: &str) -> Result<(), ViewerError> {
     Ok(())
 }
 
-fn sanitize_body_html(html: &str) -> String {
+fn sanitize_body_html(html: &str, base_dir: Option<&std::path::Path>) -> String {
     let mut sanitized = String::with_capacity(html.len());
     let mut cursor = 0;
 
@@ -253,7 +390,7 @@ fn sanitize_body_html(html: &str) -> String {
         match find_tag_end(html, tag_start) {
             Some(tag_end) => {
                 let tag = &html[tag_start..=tag_end];
-                sanitized.push_str(&sanitize_tag(tag));
+                sanitized.push_str(&sanitize_tag(tag, base_dir));
                 cursor = tag_end + 1;
 
                 // Defensive: Comrak tagfilter escapes <style> before reaching here,
@@ -267,12 +404,14 @@ fn sanitize_body_html(html: &str) -> String {
 
                             match find_tag_end(html, close_start) {
                                 Some(close_end) => {
-                                    sanitized
-                                        .push_str(&sanitize_tag(&html[close_start..=close_end]));
+                                    sanitized.push_str(&sanitize_tag(
+                                        &html[close_start..=close_end],
+                                        base_dir,
+                                    ));
                                     cursor = close_end + 1;
                                 }
                                 None => {
-                                    sanitized.push_str(&sanitize_tag(&html[close_start..]));
+                                    sanitized.push_str(&sanitize_tag(&html[close_start..], base_dir));
                                     return sanitized;
                                 }
                             }
@@ -320,7 +459,7 @@ fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
         .find(&needle.to_ascii_lowercase())
 }
 
-fn sanitize_tag(tag: &str) -> String {
+fn sanitize_tag(tag: &str, base_dir: Option<&std::path::Path>) -> String {
     if tag.len() <= 2 || !tag.starts_with('<') {
         return tag.to_string();
     }
@@ -437,7 +576,15 @@ fn sanitize_tag(tag: &str) -> String {
         sanitized.push_str(name);
 
         if has_value {
-            let sanitized_value = sanitize_attribute_value(value, replacement_for_attribute(name));
+            let mut sanitized_value =
+                sanitize_attribute_value(value, replacement_for_attribute(name));
+            if tag_name.eq_ignore_ascii_case("img") && name.eq_ignore_ascii_case("src") {
+                if let Some(base_dir) = base_dir {
+                    if let Some(resolved) = resolve_relative_resource_to_file_url(value, base_dir) {
+                        sanitized_value = resolved;
+                    }
+                }
+            }
             if tag_name.eq_ignore_ascii_case("input") && name.eq_ignore_ascii_case("type") {
                 if !sanitized_value.trim().eq_ignore_ascii_case("checkbox") {
                     return escape_html(tag);
@@ -673,6 +820,30 @@ fn sanitize_attribute_value(value: &str, policy: Option<AttributePolicy>) -> Str
     }
 }
 
+fn resolve_relative_resource_to_file_url(
+    value: &str,
+    base_dir: &std::path::Path,
+) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with('#')
+        || is_remote_resource_reference(trimmed)
+        || looks_like_absolute_path_or_url(trimmed)
+    {
+        return None;
+    }
+
+    let joined = base_dir.join(trimmed);
+    let absolute = std::path::absolute(joined).ok()?;
+    file_url_from_directory(&absolute)
+}
+
+fn looks_like_absolute_path_or_url(value: &str) -> bool {
+    value.starts_with('/')
+        || value.starts_with('\\')
+        || (value.len() >= 2 && value.as_bytes()[1] == b':')
+}
+
 fn sanitize_style_block(css: &str) -> String {
     if contains_remote_css_reference(css) {
         String::new()
@@ -892,6 +1063,7 @@ mod tests {
             .expect("render document shell");
 
         assert!(html.contains("guide.md"));
+        assert!(html.contains("<base href=\"file:///C:/docs/\">"));
         assert!(html.contains("data-current-file>guide.md<"));
         assert!(html.contains("<div class=\"titlebar-drag-region\">"));
         assert!(html.contains("<h1>Guide</h1><p>Read only.</p>"));
@@ -1063,6 +1235,30 @@ mod tests {
     }
 
     #[test]
+    fn local_only_shell_rewrites_relative_image_src_to_absolute_file_url() {
+        let state = ViewerState::DocumentLoaded(RenderedDocument {
+            path: PathBuf::from(r"C:\\docs\\guide.md"),
+            file_name: "guide.md".to_string(),
+            base_dir: PathBuf::from(r"C:\\docs"),
+            html_body: "<p><img src=\"images/hero.jpg\" alt=\"hero\"></p>".to_string(),
+        });
+        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+
+        let html = shell
+            .render_shell(ShellModel {
+                app_name: APP_NAME,
+                state: &state,
+                resource_policy: ResourcePolicy::LocalOnly,
+                theme: Theme::default(),
+                body_font: None,
+                recent_files: &[],
+            })
+            .expect("render shell with relative image src");
+
+        assert!(html.contains("src=\"file:///C:/docs/images/hero.jpg\""));
+    }
+
+    #[test]
     fn local_only_shell_sanitizes_unquoted_remote_resource_attributes() {
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\unquoted-remote.md"),
@@ -1096,6 +1292,49 @@ mod tests {
         assert!(html.contains("&lt;form action=//example.com/upload&gt;"));
         assert!(html.contains("data-href=\"https://example.com/doc\""));
         assert!(!html.contains("https://example.com/image.png"));
+    }
+
+    #[test]
+    fn initial_shell_has_no_base_href_tag_when_no_document_is_loaded() {
+        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+
+        let html = shell
+            .render_shell(ShellModel {
+                app_name: APP_NAME,
+                state: &ViewerState::NoDocument,
+                resource_policy: ResourcePolicy::LocalOnly,
+                theme: Theme::default(),
+                body_font: None,
+                recent_files: &[],
+            })
+            .expect("render initial shell without base href");
+
+        assert!(!html.contains("<base href="));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn document_shell_normalizes_verbatim_windows_path_for_base_href() {
+        let state = ViewerState::DocumentLoaded(RenderedDocument {
+            path: PathBuf::from(r"\\?\C:\docs\guide.md"),
+            file_name: "guide.md".to_string(),
+            base_dir: PathBuf::from(r"\\?\C:\docs"),
+            html_body: "<h1>Guide</h1>".to_string(),
+        });
+        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+
+        let html = shell
+            .render_shell(ShellModel {
+                app_name: APP_NAME,
+                state: &state,
+                resource_policy: ResourcePolicy::LocalOnly,
+                theme: Theme::default(),
+                body_font: None,
+                recent_files: &[],
+            })
+            .expect("render shell with verbatim windows path");
+
+        assert!(html.contains("<base href=\"file:///C:/docs/\">"));
     }
 
     #[test]
@@ -1255,7 +1494,7 @@ mod tests {
             .expect("render shell with remote srcset sanitized");
 
         assert!(html.contains("srcset=\"\""));
-        assert!(html.contains("src=\"cover.png\""));
+        assert!(html.contains("src=\"file:///C:/docs/cover.png\""));
         assert!(!html.contains("https://example.com/cover@2x.png"));
     }
 
