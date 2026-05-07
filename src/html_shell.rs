@@ -159,7 +159,7 @@ fn current_document_base_href(state: &ViewerState) -> String {
         return String::new();
     };
 
-    let Some(mut href) = file_url_from_directory(&document.base_dir) else {
+    let Some(mut href) = file_url_from_path(&document.base_dir) else {
         return String::new();
     };
 
@@ -170,11 +170,11 @@ fn current_document_base_href(state: &ViewerState) -> String {
     format!("<base href=\"{}\">", escape_html(&href))
 }
 
-fn file_url_from_directory(path: &std::path::Path) -> Option<String> {
+fn file_url_from_path(path: &std::path::Path) -> Option<String> {
     #[cfg(windows)]
     let normalized = normalize_windows_path_for_file_url(path)?;
     #[cfg(not(windows))]
-    let normalized = path.to_str()?.replace('\\', "/");
+    let normalized = path.to_string_lossy().replace('\\', "/");
 
     if normalized.starts_with("//") {
         return Some(format!("file:{}", encode_file_url_path(&normalized)));
@@ -840,7 +840,7 @@ fn resolve_relative_resource_to_file_url(
 
     let joined = base_dir.join(trimmed);
     let absolute = std::path::absolute(joined).ok()?;
-    file_url_from_directory(&absolute)
+    file_url_from_path(&absolute)
 }
 
 fn looks_like_absolute_path_or_url(value: &str) -> bool {
