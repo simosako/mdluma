@@ -1,6 +1,15 @@
 #![windows_subsystem = "windows"]
 
 fn main() {
+    if std::env::args_os().any(|a| a == "--version") {
+        println!(
+            "MDLuma Version {} ({})",
+            env!("CARGO_PKG_VERSION"),
+            env!("GIT_COMMIT_HASH")
+        );
+        return;
+    }
+
     if let Err(error) = mdluma::run() {
         report_startup_failure(&error.to_string());
         std::process::exit(1);
