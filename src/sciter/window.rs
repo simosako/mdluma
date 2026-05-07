@@ -975,7 +975,8 @@ mod tests {
         assert!(html.contains("data-error-area"));
         assert!(html.contains("MDLuma could not read the selected Markdown file."));
         assert!(html.contains("data-current-file"));
-        assert!(html.contains("data-current-file>No file open<"));
+        assert!(html.contains("<div class=\"file-name\" data-current-file></div>"));
+        assert!(!html.contains("No file open"));
         assert_eq!(html.matches("<header class=\"titlebar\"").count(), 1);
         assert!(!html.contains("<!doctype html><html><body><p>"));
     }

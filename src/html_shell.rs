@@ -74,7 +74,7 @@ where
         let toggle_icon_url = self
             .assets
             .icon_data_url(model.theme.toggle_icon(), icon_theme)?;
-        let file_name = current_file_name(model.state);
+        let file_name = current_file_name(model.state, model.recent_files);
         let base_href = current_document_base_href(model.state);
         let content = content_html(model.state, model.resource_policy);
         let error = error_html(model.state);
@@ -142,11 +142,16 @@ fn recent_files_html(recent_files: &[PathBuf]) -> String {
     html
 }
 
-fn current_file_name(state: &ViewerState) -> &str {
-    state
-        .current_document()
-        .map(|document| document.file_name.as_str())
-        .unwrap_or("No file open")
+fn current_file_name<'a>(state: &'a ViewerState, recent_files: &[PathBuf]) -> &'a str {
+    if let Some(document) = state.current_document() {
+        return document.file_name.as_str();
+    }
+
+    if recent_files.is_empty() {
+        ""
+    } else {
+        "Right-click to open recent files"
+    }
 }
 
 fn current_document_base_href(state: &ViewerState) -> String {
@@ -1017,7 +1022,9 @@ mod tests {
         assert!(html.contains("<menu.popup>"));
         assert!(html.contains("type=\"menu\""));
         assert!(html.contains("data-current-file"));
-        assert!(html.contains("data-current-file>No file open<"));
+        assert!(html.contains("<div class=\"file-name\" data-current-file></div>"));
+        assert!(!html.contains("No file open"));
+        assert!(!html.contains("Right-click to open recent files"));
         assert!(html.contains("<header class=\"titlebar\">"));
         assert!(html.contains("<div class=\"titlebar-drag-region\" role=\"window-caption\">"));
         assert_eq!(occurrences(&html, "<header class=\"titlebar\""), 1);
@@ -1039,6 +1046,27 @@ mod tests {
             "External Editor Setting must never be disabled"
         );
         assert!(!html.to_ascii_lowercase().contains("contenteditable"));
+    }
+
+    #[test]
+    fn initial_shell_prompts_recent_file_menu_when_recent_files_exist() {
+        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+        let recent_files = vec![PathBuf::from(r"C:\docs\guide.md")];
+
+        let html = shell
+            .render_shell(ShellModel {
+                app_name: APP_NAME,
+                state: &ViewerState::NoDocument,
+                resource_policy: ResourcePolicy::LocalOnly,
+                theme: Theme::default(),
+                body_font: None,
+                recent_files: &recent_files,
+            })
+            .expect("render initial shell with recent files");
+
+        assert!(html.contains("data-current-file>Right-click to open recent files<"));
+        assert!(!html.contains("No file open"));
+        assert!(html.contains(r#"data-action="recent-file" data-recent-index="0""#));
     }
 
     #[test]
@@ -1192,7 +1220,8 @@ mod tests {
             })
             .expect("render startup error shell");
 
-        assert!(html.contains("data-current-file>No file open<"));
+        assert!(html.contains("<div class=\"file-name\" data-current-file></div>"));
+        assert!(!html.contains("No file open"));
         assert!(html.contains("MDLuma could not read the selected Markdown file."));
         assert!(html.contains("<section class=\"error-area\" data-error-area><p class=\"error-message\">MDLuma could not read the selected Markdown file.</p></section>"));
         assert_eq!(occurrences(&html, "<header class=\"titlebar\""), 1);

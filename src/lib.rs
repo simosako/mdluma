@@ -312,7 +312,8 @@ mod tests {
         assert!(ui.initial_html[0].contains("MDLuma"));
         assert!(ui.initial_html[0].contains("Open Markdown file"));
         assert!(ui.initial_html[0].contains("class=\"titlebar-drag-region\""));
-        assert!(ui.initial_html[0].contains("data-current-file>No file open<"));
+        assert!(ui.initial_html[0].contains("data-current-file"));
+        assert!(!ui.initial_html[0].contains("No file open"));
         assert!(ui.initial_html[0].contains(r#"data-action="external-editor-setting""#,));
         assert!(ui.document_html.is_empty());
         assert!(ui.errors.is_empty());
@@ -379,7 +380,8 @@ mod tests {
             .contains("class=\"titlebar-drag-region\""));
         assert!(ui
             .latest_initial_html()
-            .contains("data-current-file>No file open<"));
+            .contains("data-current-file"));
+        assert!(!ui.latest_initial_html().contains("No file open"));
         assert!(ui.latest_initial_html().contains("Open Markdown file"));
         assert!(ui
             .latest_initial_html()
@@ -536,7 +538,8 @@ mod tests {
         let ui = ui.borrow();
         assert_eq!(ui.initial_html.len(), 1);
         assert!(ui.document_html.is_empty());
-        assert!(ui.initial_html[0].contains("No file open"));
+        assert!(ui.initial_html[0].contains("data-current-file"));
+        assert!(!ui.initial_html[0].contains("No file open"));
     }
 
     #[test]
@@ -595,7 +598,8 @@ mod tests {
 
         let ui = ui.borrow();
         assert_eq!(ui.initial_html.len(), 1);
-        assert!(ui.initial_html[0].contains("No file open"));
+        assert!(ui.initial_html[0].contains("data-current-file"));
+        assert!(!ui.initial_html[0].contains("No file open"));
     }
 
     #[test]
