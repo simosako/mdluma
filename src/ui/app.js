@@ -1056,12 +1056,18 @@ function showRecentFilesPopup(target) {
   anchor.popup(menu, { anchorAt: 1, popupAt: 7 });
 }
 
+function showRecentFilesFromNativeCaption() {
+  showRecentFilesPopup(currentFileElement());
+}
+
 function bindWindowDragHandlers() {
   var fileNameEl = currentFileElement();
   if (!fileNameEl || typeof fileNameEl.addEventListener !== "function") return false;
 
-  fileNameEl.addEventListener("click", function() {
+  fileNameEl.addEventListener("contextmenu", function(evt) {
+    evt.preventDefault();
     showRecentFilesPopup(fileNameEl);
+    return true;
   });
   return true;
 }
@@ -1137,10 +1143,13 @@ if (typeof globalThis !== "undefined") {
     handleRecentFileMenuClick,
     setAboutOverlayOpen,
     setErrorOverlayOpen,
+    showRecentFilesFromNativeCaption,
     showRecentFilesPopup,
     requestErrorDismiss,
     requestExternalEditorSetting,
   });
+
+  globalThis.__mdlumaShowRecentFilesFromNativeCaption = showRecentFilesFromNativeCaption;
 }
 
 if (document && typeof document.on === "function") {

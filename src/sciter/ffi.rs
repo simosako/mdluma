@@ -8,7 +8,8 @@ use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWLP_WNDPROC, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE, WM_DROPFILES,
-    WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
+    WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    WS_SYSMENU,
 };
 
 #[cfg(windows)]
@@ -87,6 +88,8 @@ const SW_TITLEBAR: u32 = 1 << 5;
 const SW_CONTROLS: u32 = 1 << 4;
 #[cfg(windows)]
 const WM_DL_DEFERRED_LOAD: u32 = WM_APP + 0x100;
+#[cfg(windows)]
+const HTCAPTION: usize = 2;
 
 const EXTENDED_FRAME_INIT_SCRIPT: &[u8] = b"Window.this.frameType = \"extended\";\0";
 
@@ -153,6 +156,10 @@ pub struct SciterApi {
     #[cfg(windows)]
     sciter_get_parent_element: SciterGetParentElementFn,
     #[cfg(windows)]
+    sciter_get_root_element: SciterGetRootElementFn,
+    #[cfg(windows)]
+    sciter_eval_element_script: SciterEvalElementScriptFn,
+    #[cfg(windows)]
     sciter_use_element: SciterElementRefFn,
     #[cfg(windows)]
     sciter_unuse_element: SciterElementRefFn,
@@ -189,6 +196,8 @@ struct SciterApiBindings {
     sciter_set_option: SciterSetOptionFn,
     sciter_get_attribute_by_name_cb: SciterGetAttributeByNameCbFn,
     sciter_get_parent_element: SciterGetParentElementFn,
+    sciter_get_root_element: SciterGetRootElementFn,
+    sciter_eval_element_script: SciterEvalElementScriptFn,
     sciter_use_element: SciterElementRefFn,
     sciter_unuse_element: SciterElementRefFn,
     sciter_window_attach_event_handler: SciterWindowAttachEventHandlerFn,
@@ -261,6 +270,16 @@ type SciterGetAttributeByNameCbFn = unsafe extern "C" fn(
 #[cfg(windows)]
 type SciterGetParentElementFn =
     unsafe extern "C" fn(element: SciterElementHandle, parent: *mut SciterElementHandle) -> i32;
+#[cfg(windows)]
+type SciterGetRootElementFn =
+    unsafe extern "C" fn(window: SciterWindowHandle, root: *mut SciterElementHandle) -> i32;
+#[cfg(windows)]
+type SciterEvalElementScriptFn = unsafe extern "C" fn(
+    element: SciterElementHandle,
+    script: *const u16,
+    script_length: u32,
+    retval: *mut SciterValue,
+) -> i32;
 #[cfg(windows)]
 type SciterElementRefFn = unsafe extern "C" fn(element: SciterElementHandle) -> i32;
 type SciterValueTypeFn =
@@ -613,6 +632,8 @@ impl SciterApi {
             }
             *std::ptr::addr_of_mut!(DL_ORIGINAL_PROC) =
                 Some(std::mem::transmute::<isize, WndProcFn>(prev));
+            *std::ptr::addr_of_mut!(DL_GET_ROOT_ELEMENT_FN) = Some(self.sciter_get_root_element);
+            *std::ptr::addr_of_mut!(DL_EVAL_ELEMENT_SCRIPT_FN) = Some(self.sciter_eval_element_script);
         }
         unsafe {
             DragAcceptFiles(window, 1);
@@ -882,6 +903,10 @@ impl SciterApi {
             #[cfg(windows)]
             sciter_get_parent_element: fake_sciter_get_parent_element,
             #[cfg(windows)]
+            sciter_get_root_element: fake_sciter_get_root_element,
+            #[cfg(windows)]
+            sciter_eval_element_script: fake_sciter_eval_element_script,
+            #[cfg(windows)]
             sciter_use_element: fake_sciter_element_ref,
             #[cfg(windows)]
             sciter_unuse_element: fake_sciter_element_ref,
@@ -920,6 +945,8 @@ impl SciterApi {
             sciter_set_option: bindings.sciter_set_option,
             sciter_get_attribute_by_name_cb: bindings.sciter_get_attribute_by_name_cb,
             sciter_get_parent_element: bindings.sciter_get_parent_element,
+            sciter_get_root_element: bindings.sciter_get_root_element,
+            sciter_eval_element_script: bindings.sciter_eval_element_script,
             sciter_use_element: bindings.sciter_use_element,
             sciter_unuse_element: bindings.sciter_unuse_element,
             sciter_window_attach_event_handler: bindings.sciter_window_attach_event_handler,
@@ -963,6 +990,12 @@ impl SciterApi {
             },
             sciter_get_parent_element: unsafe {
                 required_api_fn(api.SciterGetParentElement, "SciterGetParentElement")?
+            },
+            sciter_get_root_element: unsafe {
+                required_api_fn(api.SciterGetRootElement, "SciterGetRootElement")?
+            },
+            sciter_eval_element_script: unsafe {
+                required_api_fn(api.SciterEvalElementScript, "SciterEvalElementScript")?
             },
             sciter_use_element: unsafe {
                 required_api_fn(api.Sciter_UseElement, "Sciter_UseElement")?
@@ -1187,6 +1220,29 @@ unsafe extern "C" fn fake_sciter_get_parent_element(
 }
 
 #[cfg(test)]
+unsafe extern "C" fn fake_sciter_get_root_element(
+    _window: SciterWindowHandle,
+    root: *mut SciterElementHandle,
+) -> i32 {
+    if !root.is_null() {
+        unsafe {
+            *root = std::ptr::dangling_mut::<core::ffi::c_void>();
+        }
+    }
+    SCDOM_OK
+}
+
+#[cfg(test)]
+unsafe extern "C" fn fake_sciter_eval_element_script(
+    _element: SciterElementHandle,
+    _script: *const u16,
+    _script_length: u32,
+    _retval: *mut SciterValue,
+) -> i32 {
+    SCDOM_OK
+}
+
+#[cfg(test)]
 unsafe extern "C" fn fake_sciter_element_ref(_element: SciterElementHandle) -> i32 {
     SCDOM_OK
 }
@@ -1313,6 +1369,7 @@ impl_sciter_function_pointer!(
     SciterSetOptionFn,
     SciterGetAttributeByNameCbFn,
     SciterGetParentElementFn,
+    SciterEvalElementScriptFn,
     SciterElementRefFn,
     SciterWindowAttachEventHandlerFn,
     SciterWindowDetachEventHandlerFn,
@@ -1473,6 +1530,12 @@ static mut DL_CAPTURED_GEOMETRY: Option<crate::settings::WindowGeometry> = None;
 #[cfg(windows)]
 static mut DL_POSITION_LOCKED: bool = false;
 
+#[cfg(windows)]
+static mut DL_GET_ROOT_ELEMENT_FN: Option<SciterGetRootElementFn> = None;
+
+#[cfg(windows)]
+static mut DL_EVAL_ELEMENT_SCRIPT_FN: Option<SciterEvalElementScriptFn> = None;
+
 // SAFETY: These `static mut` variables are accessed exclusively from the single-window
 // thread (the UI message loop) via the subclassed WndProc. They are never read or written
 // from any other thread, so no data race is possible. If multi-window or multi-threaded
@@ -1521,6 +1584,12 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     wparam: usize,
     lparam: isize,
 ) -> isize {
+    if msg == WM_NCRBUTTONUP && wparam == HTCAPTION {
+        if show_recent_files_popup_from_native_caption(hwnd) {
+            return 0;
+        }
+    }
+
     if msg == WM_DROPFILES {
         let hdrop = wparam as *mut core::ffi::c_void;
         let dropped_paths = collect_dropped_file_paths(hdrop);
@@ -1582,6 +1651,35 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     } else {
         0
     }
+}
+
+#[cfg(windows)]
+fn show_recent_files_popup_from_native_caption(hwnd: SciterWindowHandle) -> bool {
+    let get_root = unsafe { std::ptr::read(std::ptr::addr_of!(DL_GET_ROOT_ELEMENT_FN)) };
+    let eval_script = unsafe { std::ptr::read(std::ptr::addr_of!(DL_EVAL_ELEMENT_SCRIPT_FN)) };
+    let (Some(get_root), Some(eval_script)) = (get_root, eval_script) else {
+        return false;
+    };
+
+    let mut root = std::ptr::null_mut();
+    let root_status = unsafe { get_root(hwnd, &mut root) };
+    if root_status != SCDOM_OK || root.is_null() {
+        return false;
+    }
+
+    let script: Vec<u16> = "globalThis.__mdlumaShowRecentFilesFromNativeCaption && globalThis.__mdlumaShowRecentFilesFromNativeCaption();"
+        .encode_utf16()
+        .collect();
+    let status = unsafe {
+        eval_script(
+            root,
+            script.as_ptr(),
+            script.len() as u32,
+            std::ptr::null_mut(),
+        )
+    };
+
+    status == SCDOM_OK
 }
 
 #[cfg(windows)]

@@ -1019,7 +1019,7 @@ mod tests {
         assert!(html.contains("data-current-file"));
         assert!(html.contains("data-current-file>No file open<"));
         assert!(html.contains("<header class=\"titlebar\">"));
-        assert!(html.contains("<div class=\"titlebar-drag-region\">"));
+        assert!(html.contains("<div class=\"titlebar-drag-region\" role=\"window-caption\">"));
         assert_eq!(occurrences(&html, "<header class=\"titlebar\""), 1);
         assert_eq!(occurrences(&html, "<div class=\"titlebar-spacer\""), 1);
         assert_eq!(occurrences(&html, "data-role=\"viewer-viewport\""), 1);
@@ -1065,7 +1065,7 @@ mod tests {
         assert!(html.contains("guide.md"));
         assert!(html.contains("<base href=\"file:///C:/docs/\">"));
         assert!(html.contains("data-current-file>guide.md<"));
-        assert!(html.contains("<div class=\"titlebar-drag-region\">"));
+        assert!(html.contains("<div class=\"titlebar-drag-region\" role=\"window-caption\">"));
         assert!(html.contains("<h1>Guide</h1><p>Read only.</p>"));
         assert!(html.contains("<section class=\"viewer-viewport\" data-role=\"viewer-viewport\">"));
         assert!(html.contains("<div class=\"viewport-body\" data-role=\"viewport-body\">"));

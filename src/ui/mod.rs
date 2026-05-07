@@ -936,7 +936,7 @@ if (popupArgs.options.anchorAt !== 1 || popupArgs.options.popupAt !== 7) {
     }
 
     #[test]
-    fn titlebar_uses_native_caption_role_and_file_click_popup() {
+    fn titlebar_file_name_drags_natively_and_shows_recent_files_on_right_click() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
             .read_text_asset(UiTextAsset::AppJs)
@@ -949,14 +949,15 @@ if (popupArgs.options.anchorAt !== 1 || popupArgs.options.popupAt !== 7) {
             &script,
             r#"
 const docListeners = [];
-let fileClickHandler = null;
+let fileContextMenuHandler = null;
 let popupArgs = null;
+const calls = [];
 const menu = { childElementCount: 1 };
 const openButton = { addEventListener() {} };
 const currentFile = {
   addEventListener(type, handler) {
-    if (type === "click") {
-      fileClickHandler = handler;
+    if (type === "contextmenu") {
+      fileContextMenuHandler = handler;
     }
   },
   popup(menuElement, options) {
@@ -966,7 +967,9 @@ const currentFile = {
 
 global.Window = {
   this: {
-    xcall() {},
+    xcall(name) {
+      calls.push(name);
+    },
   },
 };
 
@@ -997,20 +1000,22 @@ if (scriptSource.includes("Window.this.move")) {
 if (docListeners.includes("mousemove") || docListeners.includes("mouseup")) {
   throw new Error("drag should not use document mouse tracking: " + JSON.stringify(docListeners));
 }
-if (typeof fileClickHandler !== "function") {
-  throw new Error("expected file name click handler");
+if (typeof fileContextMenuHandler !== "function") {
+  throw new Error("expected file name contextmenu handler");
 }
-
-fileClickHandler();
+fileContextMenuHandler({ preventDefault() {} });
 
 if (!popupArgs || popupArgs.menuElement !== menu) {
-  throw new Error("expected recent files popup from file name click");
+  throw new Error("expected recent files popup from file name context menu");
 }
         "#,
         );
 
         assert!(index.contains("class=\"titlebar-brand\" role=\"window-caption\""));
-        assert!(index.contains("class=\"file-name\" role=\"window-caption\""));
+        assert!(index.contains("class=\"titlebar-drag-region\" role=\"window-caption\""));
+        assert!(index.contains("class=\"file-name\" data-current-file"));
+        assert!(!index.contains("class=\"file-name\" role=\"window-caption\""));
+        assert!(index.contains("<menu.popup id=\"recent-files-menu\""));
         assert!(output.status.success(), "{}", output.stderr);
     }
 
