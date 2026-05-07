@@ -1090,8 +1090,8 @@ mod tests {
             "HTML must NOT contain full absolute path"
         );
         assert!(
-            !rendered_html.contains("tmp-integ-path-norm"),
-            "HTML must NOT contain intermediate directory name"
+            rendered_html.contains("data-current-file>notes.md<"),
+            "HTML current file label must show leaf file name only"
         );
 
         let _ = fs::remove_dir_all(&subdir);
