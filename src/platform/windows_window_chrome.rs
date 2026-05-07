@@ -2,7 +2,7 @@ use crate::sciter::ffi::SciterWindowHandle;
 use crate::ViewerError;
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    HTCAPTION, SC_MOVE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WM_SYSCOMMAND,
+    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
 };
 
 const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
@@ -18,7 +18,6 @@ pub trait WindowChromeController {
     fn minimize(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError>;
     fn toggle_maximize(&self, hwnd: SciterWindowHandle) -> Result<WindowChromeState, ViewerError>;
     fn close(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError>;
-    fn begin_drag(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -37,9 +36,6 @@ impl WindowChromeController for WindowsWindowChrome {
         close_with(hwnd, &RuntimeWin32)
     }
 
-    fn begin_drag(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
-        begin_drag_with(hwnd, &RuntimeWin32)
-    }
 }
 
 #[cfg(not(windows))]
@@ -49,13 +45,7 @@ const SW_MAXIMIZE: i32 = 3;
 #[cfg(not(windows))]
 const SW_RESTORE: i32 = 9;
 #[cfg(not(windows))]
-const WM_SYSCOMMAND: u32 = 0x0112;
-#[cfg(not(windows))]
-const SC_MOVE: usize = 0xF010;
-#[cfg(not(windows))]
 const WM_CLOSE: u32 = 0x0010;
-#[cfg(not(windows))]
-const HTCAPTION: usize = 2;
 
 fn minimize_with(
     hwnd: SciterWindowHandle,
@@ -91,22 +81,6 @@ fn close_with(hwnd: SciterWindowHandle, win32: &impl Win32WindowChrome) -> Resul
     } else {
         Err(window_action_error("close", hwnd))
     }
-}
-
-fn begin_drag_with(
-    hwnd: SciterWindowHandle,
-    win32: &impl Win32WindowChrome,
-) -> Result<(), ViewerError> {
-    ensure_live_window(hwnd, win32)?;
-
-    let capture_released = win32.release_capture();
-    if !capture_released {
-        return Err(window_action_error("begin drag", hwnd));
-    }
-
-    let _ = win32.send_message(hwnd, WM_SYSCOMMAND, (SC_MOVE | HTCAPTION) as usize, 0);
-
-    Ok(())
 }
 
 pub fn set_window_corner_preference(hwnd: SciterWindowHandle, rounded: bool) {
@@ -166,14 +140,6 @@ trait Win32WindowChrome {
         w_param: usize,
         l_param: isize,
     ) -> bool;
-    fn release_capture(&self) -> bool;
-    fn send_message(
-        &self,
-        hwnd: SciterWindowHandle,
-        message: u32,
-        w_param: usize,
-        l_param: isize,
-    ) -> isize;
 }
 
 struct RuntimeWin32;
@@ -201,19 +167,6 @@ impl Win32WindowChrome for RuntimeWin32 {
         runtime_post_message(hwnd, message, w_param, l_param)
     }
 
-    fn release_capture(&self) -> bool {
-        runtime_release_capture()
-    }
-
-    fn send_message(
-        &self,
-        hwnd: SciterWindowHandle,
-        message: u32,
-        w_param: usize,
-        l_param: isize,
-    ) -> isize {
-        runtime_send_message(hwnd, message, w_param, l_param)
-    }
 }
 
 #[cfg(windows)]
@@ -267,36 +220,6 @@ fn runtime_post_message(
 }
 
 #[cfg(windows)]
-fn runtime_release_capture() -> bool {
-    unsafe { ReleaseCapture() != 0 }
-}
-
-#[cfg(not(windows))]
-fn runtime_release_capture() -> bool {
-    false
-}
-
-#[cfg(windows)]
-fn runtime_send_message(
-    hwnd: SciterWindowHandle,
-    message: u32,
-    w_param: usize,
-    l_param: isize,
-) -> isize {
-    unsafe { SendMessageW(hwnd, message, w_param, l_param) }
-}
-
-#[cfg(not(windows))]
-fn runtime_send_message(
-    _hwnd: SciterWindowHandle,
-    _message: u32,
-    _w_param: usize,
-    _l_param: isize,
-) -> isize {
-    0
-}
-
-#[cfg(windows)]
 #[link(name = "User32")]
 extern "system" {
     fn IsWindow(window: SciterWindowHandle) -> i32;
@@ -308,13 +231,6 @@ extern "system" {
         w_param: usize,
         l_param: isize,
     ) -> i32;
-    fn ReleaseCapture() -> i32;
-    fn SendMessageW(
-        window: SciterWindowHandle,
-        message: u32,
-        w_param: usize,
-        l_param: isize,
-    ) -> isize;
 }
 
 #[cfg(windows)]
@@ -331,10 +247,9 @@ extern "system" {
 #[cfg(test)]
 mod tests {
     use super::{
-        begin_drag_with, close_with, minimize_with, set_window_corner_preference,
-        toggle_maximize_with, Win32WindowChrome, WindowChromeController, WindowChromeState,
-        WindowsWindowChrome, HTCAPTION, SC_MOVE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
-        WM_SYSCOMMAND,
+        close_with, minimize_with, set_window_corner_preference, toggle_maximize_with,
+        Win32WindowChrome, WindowChromeController, WindowChromeState, WindowsWindowChrome,
+        SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
     };
     use crate::sciter::ffi::SciterWindowHandle;
     use crate::ViewerError;
@@ -386,20 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn begin_drag_releases_capture_and_sends_caption_drag_message() {
-        let seam = FakeWin32::default();
-        let hwnd = fake_hwnd();
-
-        begin_drag_with(hwnd, &seam).expect("begin drag");
-
-        assert!(seam.release_capture_called.get());
-        assert_eq!(
-            seam.last_send_message.get(),
-            Some((WM_SYSCOMMAND, (SC_MOVE | HTCAPTION) as usize, 0))
-        );
-    }
-
-    #[test]
     fn minimize_succeeds_even_when_show_window_reports_previously_hidden() {
         let seam = FakeWin32 {
             show_window_result: false,
@@ -409,20 +310,6 @@ mod tests {
         minimize_with(fake_hwnd(), &seam)
             .expect("previous visibility must not be treated as failure");
         assert_eq!(seam.last_show_window_command.get(), Some(SW_MINIMIZE));
-    }
-
-    #[test]
-    fn begin_drag_allows_zero_send_message_result() {
-        let seam = FakeWin32 {
-            send_message_result: 0,
-            ..FakeWin32::default()
-        };
-
-        begin_drag_with(fake_hwnd(), &seam).expect("WM_NCLBUTTONDOWN may validly return zero");
-        assert_eq!(
-            seam.last_send_message.get(),
-            Some((WM_SYSCOMMAND, (SC_MOVE | HTCAPTION) as usize, 0))
-        );
     }
 
     #[test]
@@ -510,26 +397,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn failed_release_capture_stops_drag_before_sending_caption_message() {
-        let seam = FakeWin32 {
-            release_capture_success: false,
-            ..FakeWin32::default()
-        };
-        let hwnd = fake_hwnd();
-
-        let error = begin_drag_with(hwnd, &seam).expect_err("release capture failure must surface");
-
-        assert_eq!(
-            error,
-            ViewerError::ui(format!(
-                "Windows window chrome could not begin drag window handle {:p}",
-                hwnd
-            ))
-        );
-        assert_eq!(seam.last_send_message.get(), None);
-    }
-
     fn fake_hwnd() -> SciterWindowHandle {
         std::ptr::dangling_mut::<core::ffi::c_void>()
     }
@@ -539,12 +406,8 @@ mod tests {
         maximized: bool,
         show_window_result: bool,
         post_message_success: bool,
-        release_capture_success: bool,
-        send_message_result: isize,
         last_show_window_command: Cell<Option<i32>>,
         last_post_message: Cell<Option<(u32, usize, isize)>>,
-        release_capture_called: Cell<bool>,
-        last_send_message: Cell<Option<(u32, usize, isize)>>,
     }
 
     impl Win32WindowChrome for FakeWin32 {
@@ -573,22 +436,6 @@ mod tests {
             self.post_message_success
         }
 
-        fn release_capture(&self) -> bool {
-            self.release_capture_called.set(true);
-            self.release_capture_success
-        }
-
-        fn send_message(
-            &self,
-            _hwnd: SciterWindowHandle,
-            message: u32,
-            w_param: usize,
-            l_param: isize,
-        ) -> isize {
-            self.last_send_message
-                .set(Some((message, w_param, l_param)));
-            self.send_message_result
-        }
     }
 
     impl Default for FakeWin32 {
@@ -598,12 +445,8 @@ mod tests {
                 maximized: false,
                 show_window_result: true,
                 post_message_success: true,
-                release_capture_success: true,
-                send_message_result: 1,
                 last_show_window_command: Cell::new(None),
                 last_post_message: Cell::new(None),
-                release_capture_called: Cell::new(false),
-                last_send_message: Cell::new(None),
             }
         }
     }

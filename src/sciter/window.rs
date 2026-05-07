@@ -121,7 +121,6 @@ pub enum ViewerCommand {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowChromeAction {
-    BeginDrag,
     Minimize,
     ToggleMaximize,
     Close,
@@ -133,7 +132,6 @@ impl WindowChromeAction {
             "window-minimize-requested" => Some(Self::Minimize),
             "window-toggle-maximize-requested" => Some(Self::ToggleMaximize),
             "window-close-requested" => Some(Self::Close),
-            "window-drag-requested" => Some(Self::BeginDrag),
             _ => None,
         }
     }
@@ -465,7 +463,6 @@ unsafe fn dispatch_window_chrome_command(
 ) -> Result<(), ViewerError> {
     let window_chrome = unsafe { &*window_chrome };
     match action {
-        WindowChromeAction::BeginDrag => window_chrome.begin_drag(window),
         WindowChromeAction::Minimize => window_chrome.minimize(window),
         WindowChromeAction::ToggleMaximize => window_chrome.toggle_maximize(window).map(|_| ()),
         WindowChromeAction::Close => window_chrome.close(window),
@@ -1257,10 +1254,6 @@ mod tests {
             WindowChromeAction::from_ui_event("window-close-requested"),
             Some(WindowChromeAction::Close)
         );
-        assert_eq!(
-            WindowChromeAction::from_ui_event("window-drag-requested"),
-            Some(WindowChromeAction::BeginDrag)
-        );
 
         for unsupported in ["open-file-requested", "search-requested", "window-close"] {
             assert_eq!(WindowChromeAction::from_ui_event(unsupported), None);
@@ -1358,16 +1351,11 @@ mod tests {
             1
         );
         assert_eq!(
-            window.dispatch_test_viewer_event("window-drag-requested"),
-            1
-        );
-        assert_eq!(
             *chrome_calls.borrow(),
             vec![
                 WindowChromeAction::Minimize,
                 WindowChromeAction::ToggleMaximize,
                 WindowChromeAction::Close,
-                WindowChromeAction::BeginDrag,
             ]
         );
     }
@@ -1690,9 +1678,6 @@ mod tests {
             Err(ViewerError::ui("window close rejected"))
         }
 
-        fn begin_drag(&self, _hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
-            Ok(())
-        }
     }
 
     #[derive(Default)]
@@ -1721,10 +1706,6 @@ mod tests {
             Ok(())
         }
 
-        fn begin_drag(&self, _hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
-            self.calls.borrow_mut().push(WindowChromeAction::BeginDrag);
-            Ok(())
-        }
     }
 
     #[test]
