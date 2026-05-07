@@ -463,8 +463,7 @@ impl SciterApi {
         saved_geometry: Option<&crate::settings::WindowGeometry>,
     ) -> Result<SciterWindowHandle, SciterRuntimeError> {
         let (cascade_left, cascade_top) = read_window_cascade_offset();
-        let safe_geometry = saved_geometry.filter(|geo| is_on_screen(geo));
-        let mut frame = if let Some(geo) = safe_geometry {
+        let mut frame = if let Some(geo) = saved_geometry {
             SciterRect {
                 left: geo.left + cascade_left,
                 top: geo.top + cascade_top,
@@ -479,6 +478,14 @@ impl SciterApi {
                 bottom: 820 + cascade_top,
             }
         };
+        if !is_on_screen_rect(&frame) {
+            frame = SciterRect {
+                left: 100 + cascade_left,
+                top: 100 + cascade_top,
+                right: 1180 + cascade_left,
+                bottom: 820 + cascade_top,
+            };
+        }
         let creation_flags = viewer_window_creation_flags();
         self.configure_script_runtime_features()?;
         if should_install_init_script() {
@@ -1175,21 +1182,20 @@ fn read_window_cascade_offset() -> (i32, i32) {
 }
 
 #[cfg(windows)]
-fn is_on_screen(geo: &crate::settings::WindowGeometry) -> bool {
+fn is_on_screen_rect(rect: &SciterRect) -> bool {
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
     if screen_w <= 0 || screen_h <= 0 {
         return true;
     }
-    let visible_w = (geo.right - geo.left).min(screen_w);
-    let visible_h = (geo.bottom - geo.top).min(screen_h);
-    let overlaps = geo.left < screen_w && geo.left + visible_w > 0
-        && geo.top < screen_h && geo.top + visible_h > 0;
-    overlaps
+    let visible_w = (rect.right - rect.left).min(screen_w);
+    let visible_h = (rect.bottom - rect.top).min(screen_h);
+    rect.left < screen_w && rect.left + visible_w > 0
+        && rect.top < screen_h && rect.top + visible_h > 0
 }
 
 #[cfg(not(windows))]
-fn is_on_screen(_geo: &crate::settings::WindowGeometry) -> bool {
+fn is_on_screen_rect(_rect: &SciterRect) -> bool {
     true
 }
 
