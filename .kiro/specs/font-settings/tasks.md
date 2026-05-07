@@ -107,5 +107,28 @@
   - 起動時に保存済み `body_font` が最初の `ShellModel` に渡されることを検証する（受入れ基準 3.2, 3.3）
   - 保存済み設定がない場合は `body_font` が `None` であることを検証する（受入れ基準 3.4）
   - 保存済み設定の読込失敗時に `body_font` が `None` でフォールバックすることを検証する（受入れ基準 4.1）
+
+- [x] 9. 本文フォントの増分更新
+- [x] 9.1 ViewerUi トレイトに apply_body_font を追加
+  - `ViewerUi` トレイトに `apply_body_font(&mut self, body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError>` デフォルト no-op メソッドを追加する
+  - `Rc<RefCell<SciterWindow>>` ブランケット impl に委譲を追加する
+  - `SciterWindow` 実装で `eval_document_script()` 経由の本文フォント CSS 変数更新を実装する
+  - JS スニペットは `.markdown-selection-host` 要素の `style` 属性で `--body-font-family` / `--body-font-size` を直接更新する
+  - `body_font` が `None` の場合は CSS 変数をクリアし、CSS デフォルト値へフォールバックさせる
+  - `apply_theme()` と同じパターンを踏襲する
+  - 単体テストで CSS 変数更新スクリプトが正しく構築されることを検証する
+  - 完了状態: `rtk cargo build` / `rtk cargo test` がパスする
+  - _Requirements: 2.5, 5.1, 5.2, 5.3_
+  - _Boundary: BodyFontIncrementalUpdate_
+
+- [x] 9.2 AppController::open_body_font_dialog を増分更新に変更
+  - `open_body_font_dialog()` の確定パスから `render_state_html()` + `show_document()` を削除する
+  - 代わりに `self.ui.apply_body_font(self.body_font.as_ref())?` を呼び出す
+  - 既存の単体テストで確定時に `render_state_html()` / `show_document()` が呼ばれないことを確認する
+  - キャンセル・エラーパスは変更しない
+  - 完了状態: `rtk cargo build` / `rtk cargo test` がパスする
+  - _Depends: 9.1_
+  - _Requirements: 2.5, 5.1, 5.2, 5.3_
+  - _Boundary: FontSelectionController_
   - _Depends: 7.1_
   - _Requirements: 1.2, 1.4, 2.1, 3.1, 3.2, 3.3, 4.1, 4.3_

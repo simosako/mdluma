@@ -13,7 +13,7 @@
 ### Non-Goals
 - タイトルバー、ウィンドウボタン、検索 UI、エラー表示など本文以外の UI フォント変更。
 - Web フォント取得、独自フォント一覧管理、OS が提供しないフォントの追加。
-- フォント変更時の検索パネル開閉状態、検索クエリ、ハイライト状態の保持。
+
 
 ## Boundary Commitments
 
@@ -31,7 +31,7 @@
 
 ### Allowed Dependencies
 - `src/settings.rs` の JSON 設定基盤と既存の best-effort load/save 方針。
-- `src/app.rs` の `AppController` による状態保持と全文再描画パターン。
+- `src/app.rs` の `AppController` による状態保持と `apply_body_font()` 増分更新パターン。
 - `src/sciter/window.rs` の `ViewerCommand` / `Window.this.xcall(...)` ブリッジ。
 - `src/platform/` 配下の Windows 固有 FFI 実装パターン。
 - Sciter.js SDK の `button type="menu"` と `<menu.popup>`。
@@ -69,8 +69,9 @@ graph TB
 **Architecture Integration**:
 - Selected pattern: 既存 viewer 設定フローを拡張し、Windows ネイティブフォントダイアログだけを `src/platform/` に分離するハイブリッド拡張。
 - Domain/feature boundaries: UI 導線は `src/ui/`、コマンド変換は `src/sciter/window.rs`、状態遷移と保存は `src/app.rs`、永続化モデルは `src/settings.rs`、ネイティブダイアログは `src/platform/windows_font_dialog.rs` が責務を持つ。
-- Existing patterns preserved: `SettingsFile` の best-effort 永続化、`ViewerCommand` ブリッジ、`HtmlShell` の全文再描画、Windows 固有 FFI の局所化。
+- Existing patterns preserved: `SettingsFile` の best-effort 永続化、`ViewerCommand` ブリッジ、`ViewerUi` 増分更新パターン（`apply_theme` / `apply_body_font`）、Windows 固有 FFI の局所化。
 - New components rationale: `FontDialog` は `FileDialog` と責務を分離し、Windows API の契約差を局所化するために必要である。
+- Incremental update: フォント適用は theme 切替と同じ `ViewerUi::apply_body_font()` 経由の増分更新で行い、`eval_document_script` で本文フォント CSS 変数を直接更新する。HTML 全再読み込みは行わない。
 - Steering compliance: 軽量・最小構成を保ち、viewer 機能だけを追加し、Windows 固有処理は `src/platform/` へ閉じ込める。
 
 **Dependency Direction**:
@@ -146,9 +147,7 @@ sequenceDiagram
     alt confirmed
         Dialog-->>App: Selected body font
         App->>Store: save settings
-        App->>Shell: render shell with body font
-        Shell-->>App: html
-        App->>Ui: show_document html
+        App->>Ui: apply_body_font incremental update
     else cancelled
         Dialog-->>App: Cancelled
         App-->>Ui: No change
@@ -182,10 +181,11 @@ Flow-level decisions:
 | 1.2 | `Font` 選択で OS ネイティブダイアログを開く | ViewerCommandBridge, FontSelectionController, WindowsFontDialog | `font-settings-requested`, `FontDialog::choose_body_font` | Font selection |
 | 1.3 | ダイアログで本文フォント種類とサイズを選択できる | WindowsFontDialog | `CHOOSEFONTW`, `LOGFONTW`, `FontDialogResult::Selected` | Font selection |
 | 1.4 | キャンセル時は現在設定を変えない | FontSelectionController | `FontDialogResult::Cancelled` | Font selection |
-| 2.1 | 確定時に現在本文へ適用する | FontSelectionController, BodyFontShellStyle | `ShellModel.body_font`, `show_document()` | Font selection |
+| 2.1 | 確定時に現在本文へ適用する | FontSelectionController, BodyFontShellStyle | `ShellModel.body_font`, `apply_body_font()` | Font selection |
 | 2.2 | 本文以外の UI フォントは変えない | BodyFontShellStyle, MoreMenuUi | `.markdown-body` scoped CSS vars | Font selection |
 | 2.3 | 別文書にも現在設定を適用する | FontSelectionController, BodyFontShellStyle | `render_state_html()` | Font selection |
 | 2.4 | テキスト選択とコピーを継続利用可能にする | BodyFontShellStyle | `.markdown-selection-host` 維持 | Font selection |
+| 2.5 | HTML 再読み込みなしで本文フォントを反映する | BodyFontIncrementalUpdate | `ViewerUi::apply_body_font()` | Font selection |
 | 3.1 | 確定時に設定保存する | FontSelectionController, BodyFontSettingsStore | `SettingsFile.save()` | Font selection |
 | 3.2 | 起動時に保存済み設定を表示前に読む | BodyFontSettingsStore, FontSelectionController | `SettingsFile.load()` | Startup restore |
 | 3.3 | 最初の本文へ復元設定を適用する | FontSelectionController, BodyFontShellStyle | `ShellModel.body_font` | Startup restore |
@@ -193,6 +193,9 @@ Flow-level decisions:
 | 4.1 | 保存済み設定を読めない場合も既定本文フォントで起動継続する | BodyFontSettingsStore | `Settings::default()` fallback | Startup restore |
 | 4.2 | 保存済み設定を適用できない場合は既定本文フォントで表示する | BodyFontShellStyle | CSS fallback chain | Startup restore |
 | 4.3 | 保存失敗時も閲覧継続し診断情報を残す | FontSelectionController, BodyFontSettingsStore | `SettingsFile.save()`, `debug_log!` | Font selection |
+| 5.1 | フォント変更時のスクロール位置を維持する | BodyFontIncrementalUpdate | `apply_body_font()` 増分更新 | Font selection |
+| 5.2 | フォント変更時の検索パネル開閉状態を維持する | BodyFontIncrementalUpdate | `apply_body_font()` 増分更新 | Font selection |
+| 5.3 | フォント変更時の検索クエリとハイライト状態を維持する | BodyFontIncrementalUpdate | `apply_body_font()` 増分更新 | Font selection |
 
 ## Components and Interfaces
 
@@ -200,10 +203,11 @@ Flow-level decisions:
 |-----------|--------------|--------|--------------|--------------------------|-----------|
 | MoreMenuUi | UI | `...` メニューに `Font` 項目を出す | 1.1, 2.2 | Sciter menu behavior (P0), AppJs (P0) | State |
 | ViewerCommandBridge | Runtime bridge | `font-settings-requested` を Rust 側コマンドへ変換する | 1.2, 1.4 | AppJs (P0), AppController (P0) | Event |
-| FontSelectionController | Application | ダイアログ起動、状態更新、保存、再描画を調停する | 1.2-1.4, 2.1-2.4, 3.1-3.3, 4.3 | FontDialog (P0), SettingsFile (P0), HtmlShell (P0), ViewerUi (P0) | Service, State |
+| FontSelectionController | Application | ダイアログ起動、状態更新、保存、本文フォントの増分更新を調停する | 1.2-1.4, 2.1-2.5, 3.1-3.3, 4.3, 5.1-5.3 | FontDialog (P0), SettingsFile (P0), ViewerUi (P0) | Service, State |
 | BodyFontSettingsStore | Persistence | 本文フォント設定の永続化と既定値フォールバックを担う | 3.1-3.4, 4.1, 4.3 | serde JSON (P0) | State |
 | WindowsFontDialog | Platform | ChooseFontW を本文フォント選択 API として包む | 1.2-1.4 | Win32 Comdlg32 (P0) | Service |
-| BodyFontShellStyle | Rendering | 本文限定のフォント CSS 変数とフォールバックを組み立てる | 2.1-2.4, 3.3, 4.2 | HtmlShell (P0), styles.css (P0) | State |
+| BodyFontShellStyle | Rendering | 本文限定のフォント CSS 変数とフォールバックを組み立てる | 2.1-2.5, 3.3, 4.2, 5.1-5.3 | HtmlShell (P0), styles.css (P0) | State |
+| BodyFontIncrementalUpdate | Runtime bridge | フォント変更時に HTML 全再読み込みせず CSS 変数を DOM 上で直接更新する | 2.5, 5.1-5.3 | ViewerUi (P0), eval_document_script (P0) | Service |
 
 ### UI Layer
 
@@ -265,12 +269,12 @@ Flow-level decisions:
 
 | Field | Detail |
 |-------|--------|
-| Intent | 本文フォント選択の確定、保存、再描画、継続動作を一括調停する |
-| Requirements | 1.2, 1.4, 2.1, 2.3, 3.1, 3.2, 3.3, 4.3 |
+| Intent | 本文フォント選択の確定、保存、本文フォントの増分更新、継続動作を一括調停する |
+| Requirements | 1.2, 1.4, 2.1, 2.3, 2.5, 3.1, 3.2, 3.3, 4.3, 5.1, 5.2, 5.3 |
 
 **Responsibilities & Constraints**
 - `body_font: Option<BodyFontSettings>` をセッション状態として持つ。
-- `FontDialog` 結果が確定なら現在セッション状態を更新し、保存を試み、HTML を再描画する。
+- 確定なら現在セッション状態を更新し、保存を試み、`apply_body_font()` で本文フォント CSS 変数を増分更新する。
 - キャンセル時は state と HTML を変えない。
 - 保存失敗時もセッション状態と本文表示は更新し、診断ログだけを残す。
 
@@ -278,8 +282,7 @@ Flow-level decisions:
 - Inbound: `ViewerCommandBridge` — `FontSettingsRequested` を渡す (P0)
 - Outbound: `FontDialog` — 本文フォント選択 (P0)
 - Outbound: `SettingsFile` — `Settings` 保存と復元 (P0)
-- Outbound: `HtmlShell` — 本文フォント付き HTML 生成 (P0)
-- Outbound: `ViewerUi` — 現在表示の差し替え (P0)
+- Outbound: `ViewerUi::apply_body_font()` — 本文フォント CSS 変数の増分更新 (P0)
 
 **Contracts**: Service [x] / API [ ] / Event [ ] / Batch [ ] / State [x]
 
@@ -305,7 +308,7 @@ impl<D, F, L, R, H, U, S> AppController<D, F, L, R, H, U, S> {
   - `body_font` は `None` または妥当な `BodyFontSettings` である。
   - `ViewerUi` は既に初期 HTML を表示済み、または起動直前の状態にある。
 - Postconditions:
-  - 確定時は `body_font` が更新され、以後の `render_state_html()` が同じ値を使用する。
+  - 確定時は `body_font` が更新され、`apply_body_font()` により現在表示中の本文フォントが増分更新される。
   - キャンセル時は `body_font`、設定ファイル、現在 HTML のいずれも変更しない。
 - Invariants:
   - `body_font` の更新有無にかかわらず、`ViewerState` の現在文書参照は保持する。
@@ -317,7 +320,7 @@ impl<D, F, L, R, H, U, S> AppController<D, F, L, R, H, U, S> {
 
 **Implementation Notes**
 - 保存は best-effort とし、失敗しても選択済み本文フォントは現セッションへ適用する。
-- フォント変更は theme 切替と同じ全文再描画で反映する。
+- フォント変更は HTML 全再読み込みではなく、`apply_body_font()` による増分更新で反映する。本文フォント CSS 変数（`--body-font-family`, `--body-font-size`）を Sciter DOM 上で直接更新し、スクロール位置や検索状態を保持する。
 - フォントダイアログ自体の実エラーは `debug_log!` で記録し、文書閲覧は継続する。
 
 ### Persistence Layer
@@ -412,7 +415,7 @@ pub trait FontDialog {
 | Field | Detail |
 |-------|--------|
 | Intent | 本文だけに作用するフォント CSS を HTML シェルへ注入する |
-| Requirements | 2.1, 2.2, 2.4, 3.3, 4.2 |
+| Requirements | 2.1, 2.2, 2.4, 2.5, 3.3, 4.2, 5.1, 5.2, 5.3 |
 
 **Responsibilities & Constraints**
 - `ShellModel` が本文フォント設定を受け取り、CSS 変数へ安全に変換する。
@@ -443,6 +446,45 @@ pub struct ShellModel<'a> {
 - family は CSS 文字列としてエスケープし、`selected, "Segoe UI", sans-serif` のようなフォールバックチェーンを生成する。
 - サイズは `point_size_tenths` を `pt` 文字列へ変換し、本文ルートにのみ渡す。
 - `.markdown-body` 以外の UI 要素は既存の `html { font-family: "Segoe UI", sans-serif; }` を保つ。
+
+### Runtime Bridge Layer
+
+#### BodyFontIncrementalUpdate
+
+| Field | Detail |
+|-------|--------|
+| Intent | フォント変更時に HTML 全再読み込みせず、DOM 上の CSS 変数を直接更新する |
+| Requirements | 2.5, 5.1, 5.2, 5.3 |
+
+**Responsibilities & Constraints**
+- `ViewerUi` トレイトの `apply_body_font(&mut self, body_font: Option<&BodyFontSettings>)` メソッドとして定義する。
+- `eval_document_script` 経由で JS を実行し、`.markdown-selection-host` の `--body-font-family` / `--body-font-size` CSS 変数を更新する。
+- `body_font` が `None` の場合は CSS 変数をクリアし、CSS デフォルト値にフォールバックさせる。
+- theme の `apply_theme()` と同じパターンを踏襲する。
+
+**Dependencies**
+- Inbound: `FontSelectionController` — 確定済み `body_font` 値 (P0)
+- Outbound: `eval_document_script` — Sciter DOM への JS 実行 (P0)
+
+**Contracts**: Service [x] / API [ ] / Event [ ] / Batch [ ] / State [ ]
+
+##### Service Interface
+```rust
+pub trait ViewerUi {
+    fn apply_body_font(&mut self, body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError> {
+        let _ = body_font;
+        Ok(())
+    }
+}
+```
+- Preconditions: Sciter ウィンドウは初期 HTML を表示済みである。
+- Postconditions: 本文フォント CSS 変数が更新され、スクロール位置・検索状態は維持される。
+- Invariants: 本文以外の UI フォントには影響しない。
+
+**Implementation Notes**
+- `apply_theme()` と同じく `eval_document_script()` を使う。
+- CSS 変数更新の JS は `.markdown-selection-host` 要素を `document.$()` で取得し、`style` 属性を直接操作する。
+- family 名のエスケープは `css_font_family()` ユーティリティを再利用する。
 
 ## Data Models
 
@@ -514,7 +556,8 @@ pub struct ShellModel<'a> {
 - `src/platform/windows_font_dialog.rs`: `ChooseFontW` の成功、キャンセル、実エラーを `Selected` / `Cancelled` / `ViewerError::FontDialog` へ正しく写像することを検証する。
 - `src/html_shell.rs`: 本文フォント CSS が `.markdown-body` にだけ入ること、`html` や検索入力のフォント指定を変更しないこと、フォールバックチェーンが生成されることを検証する。
 - `src/sciter/window.rs`: `font-settings-requested` と `data-action="font"` が `ViewerCommand::FontSettingsRequested` へ変換されることを検証する。
-- `src/app.rs`: 確定時に `body_font` が更新され保存されること、キャンセル時に state と HTML が不変であること、保存失敗時もセッション表示が更新されることを検証する。
+- `src/app.rs`: 確定時に `body_font` が更新され保存されること、キャンセル時に state と HTML が不変であること、保存失敗時もセッション表示が更新されること、確定時に `render_state_html()` + `show_document()` が呼ばれないことを検証する。
+- `src/sciter/window.rs`: `apply_body_font()` が `eval_document_script` 経由で CSS 変数を更新すること、`body_font` が `None` の場合に CSS 変数がクリアされることを検証する。
 
 ### Integration Tests
 - 起動時に保存済み本文フォントを読み込み、最初の Markdown 本文表示へ反映することを controller レベルで検証する。

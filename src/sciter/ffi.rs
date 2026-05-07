@@ -160,6 +160,10 @@ pub struct SciterApi {
     #[cfg(windows)]
     sciter_eval_element_script: SciterEvalElementScriptFn,
     #[cfg(windows)]
+    sciter_select_elements: SciterSelectElementsFn,
+    #[cfg(windows)]
+    sciter_set_style_attribute: SciterSetStyleAttributeFn,
+    #[cfg(windows)]
     sciter_use_element: SciterElementRefFn,
     #[cfg(windows)]
     sciter_unuse_element: SciterElementRefFn,
@@ -198,6 +202,8 @@ struct SciterApiBindings {
     sciter_get_parent_element: SciterGetParentElementFn,
     sciter_get_root_element: SciterGetRootElementFn,
     sciter_eval_element_script: SciterEvalElementScriptFn,
+    sciter_select_elements: SciterSelectElementsFn,
+    sciter_set_style_attribute: SciterSetStyleAttributeFn,
     sciter_use_element: SciterElementRefFn,
     sciter_unuse_element: SciterElementRefFn,
     sciter_window_attach_event_handler: SciterWindowAttachEventHandlerFn,
@@ -282,6 +288,18 @@ type SciterEvalElementScriptFn = unsafe extern "C" fn(
 ) -> i32;
 #[cfg(windows)]
 type SciterElementRefFn = unsafe extern "C" fn(element: SciterElementHandle) -> i32;
+#[cfg(windows)]
+type SciterSelectElementsFn = unsafe extern "C" fn(
+    he: SciterElementHandle,
+    css_selectors: *const i8,
+    callback: ::core::option::Option<
+        unsafe extern "C" fn(arg1: SciterElementHandle, arg2: *mut core::ffi::c_void) -> i32,
+    >,
+    param: *mut core::ffi::c_void,
+) -> i32;
+#[cfg(windows)]
+type SciterSetStyleAttributeFn =
+    unsafe extern "C" fn(he: SciterElementHandle, name: *const i8, value: *const u16) -> i32;
 type SciterValueTypeFn =
     unsafe extern "C" fn(pval: *const SciterValue, p_type: *mut u32, p_units: *mut u32) -> u32;
 type SciterValueStringDataFn = unsafe extern "C" fn(
@@ -892,9 +910,7 @@ impl SciterApi {
         let root_status = unsafe { (self.sciter_get_root_element)(window, &mut root) };
         if root_status != SCDOM_OK || root.is_null() {
             return Err(SciterRuntimeError::ApiUnavailable {
-                message: format!(
-                    "SciterGetRootElement failed with status {root_status} while applying theme"
-                ),
+                message: "SciterGetRootElement failed".to_string(),
             });
         }
 
@@ -912,9 +928,131 @@ impl SciterApi {
         } else {
             Err(SciterRuntimeError::ApiUnavailable {
                 message: format!(
-                    "SciterEvalElementScript failed with status {eval_status} while applying theme"
+                    "SciterEvalElementScript failed with status {eval_status}"
                 ),
             })
+        }
+    }
+
+    pub(crate) fn eval_document_script_with_result(
+        &self,
+        window: SciterWindowHandle,
+        script: &str,
+    ) -> Result<String, SciterRuntimeError> {
+        let mut root = std::ptr::null_mut();
+        let root_status = unsafe { (self.sciter_get_root_element)(window, &mut root) };
+        if root_status != SCDOM_OK || root.is_null() {
+            return Err(SciterRuntimeError::ApiUnavailable {
+                message: format!(
+                    "SciterGetRootElement failed with status {root_status} while applying theme"
+                ),
+            });
+        }
+
+        let wide_script: Vec<u16> = script.encode_utf16().collect();
+        #[cfg(windows)]
+        {
+            let mut retval: SciterValue = unsafe { std::mem::zeroed() };
+            let eval_status = unsafe {
+                (self.sciter_eval_element_script)(
+                    root,
+                    wide_script.as_ptr(),
+                    wide_script.len() as u32,
+                    &mut retval,
+                )
+            };
+            if eval_status == SCDOM_OK {
+                let result_str = sciter_value_to_string(self, &retval);
+                Ok(result_str.unwrap_or_default())
+            } else {
+                Err(SciterRuntimeError::ApiUnavailable {
+                    message: format!(
+                        "SciterEvalElementScript failed with status {eval_status} while applying theme"
+                    ),
+                })
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = wide_script;
+            Ok(String::new())
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn set_element_style(
+        &self,
+        window: SciterWindowHandle,
+        selector: &str,
+        style_name: &str,
+        style_value: &str,
+    ) -> Result<(), SciterRuntimeError> {
+        use std::cell::Cell;
+
+        let mut root = std::ptr::null_mut();
+        let root_status = unsafe { (self.sciter_get_root_element)(window, &mut root) };
+        if root_status != SCDOM_OK || root.is_null() {
+            return Err(SciterRuntimeError::ApiUnavailable {
+                message: "SciterGetRootElement failed while setting element style".to_string(),
+            });
+        }
+
+        let found = Cell::new(std::ptr::null_mut::<core::ffi::c_void>());
+        unsafe extern "C" fn select_callback(
+            element: SciterElementHandle,
+            param: *mut core::ffi::c_void,
+        ) -> i32 {
+            let found = param as *const Cell<*mut core::ffi::c_void>;
+            unsafe { (*found).set(element as *mut core::ffi::c_void) };
+            0
+        }
+
+        let selector_cstr =
+            std::ffi::CString::new(selector).map_err(|e| SciterRuntimeError::ApiUnavailable {
+                message: format!("invalid selector: {e}"),
+            })?;
+        let select_status = unsafe {
+            (self.sciter_select_elements)(
+                root,
+                selector_cstr.as_ptr(),
+                Some(select_callback),
+                &found as *const Cell<*mut core::ffi::c_void> as *mut core::ffi::c_void,
+            )
+        };
+        if select_status == 0 {
+            return Err(SciterRuntimeError::ApiUnavailable {
+                message: format!("SciterSelectElements found no match for '{selector}'"),
+            });
+        }
+
+        let target = found.get() as SciterElementHandle;
+        if target.is_null() {
+            return Err(SciterRuntimeError::ApiUnavailable {
+                message: format!("SciterSelectElements callback did not set element for '{selector}'"),
+            });
+        }
+
+        let name_cstr = std::ffi::CString::new(style_name).map_err(|e| {
+            SciterRuntimeError::ApiUnavailable {
+                message: format!("invalid style name: {e}"),
+            }
+        })?;
+        let value_wide: Vec<u16> = style_value.encode_utf16().collect();
+        let set_status = unsafe {
+            (self.sciter_set_style_attribute)(
+                target,
+                name_cstr.as_ptr(),
+                value_wide.as_ptr(),
+            )
+        };
+        if set_status != SCDOM_OK {
+            Err(SciterRuntimeError::ApiUnavailable {
+                message: format!(
+                    "SciterSetStyleAttribute failed with status {set_status} for '{style_name}'"
+                ),
+            })
+        } else {
+            Ok(())
         }
     }
 
@@ -942,6 +1080,8 @@ impl SciterApi {
             sciter_get_root_element: fake_sciter_get_root_element,
             #[cfg(windows)]
             sciter_eval_element_script: fake_sciter_eval_element_script,
+            sciter_select_elements: fake_sciter_select_elements,
+            sciter_set_style_attribute: fake_sciter_set_style_attribute,
             #[cfg(windows)]
             sciter_use_element: fake_sciter_element_ref,
             #[cfg(windows)]
@@ -983,6 +1123,8 @@ impl SciterApi {
             sciter_get_parent_element: bindings.sciter_get_parent_element,
             sciter_get_root_element: bindings.sciter_get_root_element,
             sciter_eval_element_script: bindings.sciter_eval_element_script,
+            sciter_select_elements: bindings.sciter_select_elements,
+            sciter_set_style_attribute: bindings.sciter_set_style_attribute,
             sciter_use_element: bindings.sciter_use_element,
             sciter_unuse_element: bindings.sciter_unuse_element,
             sciter_window_attach_event_handler: bindings.sciter_window_attach_event_handler,
@@ -1032,6 +1174,12 @@ impl SciterApi {
             },
             sciter_eval_element_script: unsafe {
                 required_api_fn(api.SciterEvalElementScript, "SciterEvalElementScript")?
+            },
+            sciter_select_elements: unsafe {
+                required_api_fn(api.SciterSelectElements, "SciterSelectElements")?
+            },
+            sciter_set_style_attribute: unsafe {
+                required_api_fn(api.SciterSetStyleAttribute, "SciterSetStyleAttribute")?
             },
             sciter_use_element: unsafe {
                 required_api_fn(api.Sciter_UseElement, "Sciter_UseElement")?
@@ -1278,6 +1426,29 @@ unsafe extern "C" fn fake_sciter_eval_element_script(
     SCDOM_OK
 }
 
+#[cfg(windows)]
+#[cfg(test)]
+unsafe extern "C" fn fake_sciter_select_elements(
+    _he: SciterElementHandle,
+    _css_selectors: *const i8,
+    _callback: ::core::option::Option<
+        unsafe extern "C" fn(arg1: SciterElementHandle, arg2: *mut core::ffi::c_void) -> i32,
+    >,
+    _param: *mut core::ffi::c_void,
+) -> i32 {
+    0
+}
+
+#[cfg(windows)]
+#[cfg(test)]
+unsafe extern "C" fn fake_sciter_set_style_attribute(
+    _he: SciterElementHandle,
+    _name: *const i8,
+    _value: *const u16,
+) -> i32 {
+    SCDOM_OK
+}
+
 #[cfg(test)]
 unsafe extern "C" fn fake_sciter_element_ref(_element: SciterElementHandle) -> i32 {
     SCDOM_OK
@@ -1406,6 +1577,8 @@ impl_sciter_function_pointer!(
     SciterGetAttributeByNameCbFn,
     SciterGetParentElementFn,
     SciterEvalElementScriptFn,
+    SciterSelectElementsFn,
+    SciterSetStyleAttributeFn,
     SciterElementRefFn,
     SciterWindowAttachEventHandlerFn,
     SciterWindowDetachEventHandlerFn,

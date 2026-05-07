@@ -261,8 +261,7 @@ where
             Ok(FontDialogResult::Selected(font)) => {
                 self.body_font = Some(font);
                 let _ = self.settings_file.save(&self.build_settings());
-                let html = self.render_state_html(&self.state)?;
-                self.ui.show_document(&html)?;
+                self.ui.apply_body_font(self.body_font.as_ref())?;
                 Ok(())
             }
             Ok(FontDialogResult::Cancelled) => Ok(()),
@@ -630,7 +629,7 @@ mod tests {
     use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
     use crate::sciter::window::{ViewerCommand, ViewerUi};
     use crate::settings::{BodyFontSettings, Settings, SettingsFile, ThemePreference};
-    use crate::{RenderedDocument, ViewerState, APP_NAME};
+    use crate::{RenderedDocument, Theme, ViewerState, APP_NAME};
     use std::cell::RefCell;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -2585,8 +2584,16 @@ mod tests {
         );
         assert_eq!(
             ui.document_html(),
-            vec!["<html>font-applied</html>".to_string()],
-            "document should be re-rendered with new font"
+            Vec::<String>::new(),
+            "document should NOT be re-rendered on font change (incremental update)"
+        );
+        assert_eq!(
+            ui.apply_body_font_calls(),
+            vec![Some(BodyFontSettings {
+                family_name: "Consolas".to_string(),
+                point_size_tenths: 110,
+            })],
+            "apply_body_font should be called with selected font"
         );
     }
 
@@ -2737,10 +2744,17 @@ mod tests {
             "body_font should be updated to new selection"
         );
 
-        let rendered_html = ui.last_document_html().expect("re-rendered html");
         assert!(
-            rendered_html.contains("Segoe UI"),
-            "re-rendered document should use new body font"
+            ui.last_document_html().is_none(),
+            "document should NOT be re-rendered on font change (incremental update)"
+        );
+        assert_eq!(
+            ui.apply_body_font_calls().last(),
+            Some(&Some(BodyFontSettings {
+                family_name: "Segoe UI".to_string(),
+                point_size_tenths: 100,
+            })),
+            "apply_body_font should be called with new font"
         );
     }
 
@@ -2904,8 +2918,16 @@ mod tests {
         );
         assert_eq!(
             ui.document_html(),
-            vec!["<html>font-applied-despite-save-failure</html>".to_string()],
-            "session display should be updated with new font even when save fails (req 4.3)"
+            Vec::<String>::new(),
+            "document should NOT be re-rendered on font change (incremental update)"
+        );
+        assert_eq!(
+            ui.apply_body_font_calls().last(),
+            Some(&Some(BodyFontSettings {
+                family_name: "Consolas".to_string(),
+                point_size_tenths: 110,
+            })),
+            "apply_body_font should be called even when save fails (req 4.3)"
         );
     }
 
@@ -3301,6 +3323,8 @@ mod tests {
         close_requested: bool,
         close_result: Option<Result<(), ViewerError>>,
         native_window_handle: Option<crate::sciter::ffi::SciterWindowHandle>,
+        apply_theme_calls: Vec<Theme>,
+        apply_body_font_calls: Vec<Option<crate::settings::BodyFontSettings>>,
     }
 
     impl RecordingViewerUi {
@@ -3334,6 +3358,14 @@ mod tests {
 
         fn set_native_window_handle(&self, handle: Option<crate::sciter::ffi::SciterWindowHandle>) {
             self.inner.borrow_mut().native_window_handle = handle;
+        }
+
+        fn apply_theme_calls(&self) -> Vec<Theme> {
+            self.inner.borrow().apply_theme_calls.clone()
+        }
+
+        fn apply_body_font_calls(&self) -> Vec<Option<crate::settings::BodyFontSettings>> {
+            self.inner.borrow().apply_body_font_calls.clone()
         }
 
         fn inject_displayed_document_artifacts(&self, copy_status: &str, selection_marker: &str) {
@@ -3390,6 +3422,22 @@ mod tests {
 
         fn native_window_handle(&self) -> Option<crate::sciter::ffi::SciterWindowHandle> {
             self.inner.borrow().native_window_handle
+        }
+
+        fn apply_theme(&mut self, theme: Theme) -> Result<(), ViewerError> {
+            self.inner.borrow_mut().apply_theme_calls.push(theme);
+            Ok(())
+        }
+
+        fn apply_body_font(
+            &mut self,
+            body_font: Option<&crate::settings::BodyFontSettings>,
+        ) -> Result<(), ViewerError> {
+            self.inner
+                .borrow_mut()
+                .apply_body_font_calls
+                .push(body_font.cloned());
+            Ok(())
         }
     }
 

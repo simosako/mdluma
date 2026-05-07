@@ -5,6 +5,7 @@ use crate::sciter::ffi::{
     HANDLE_EXCHANGE, HANDLE_SCRIPTING_METHOD_CALL, X_DROP, X_WILL_ACCEPT_DROP,
 };
 use crate::sciter::runtime::SciterRuntime;
+use crate::settings::BodyFontSettings;
 use crate::{
     DefaultHtmlShell, EmbeddedUiAssets, HtmlShell, ResourcePolicy, ShellModel, Theme, ViewerError,
     ViewerState, WindowChromeController, WindowsWindowChrome, APP_NAME,
@@ -55,6 +56,10 @@ pub trait ViewerUi {
         Ok(())
     }
 
+    fn apply_body_font(&mut self, _body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError> {
+        Ok(())
+    }
+
     fn native_window_handle(&self) -> Option<SciterWindowHandle> {
         None
     }
@@ -85,6 +90,10 @@ impl ViewerUi for Rc<RefCell<SciterWindow>> {
 
     fn apply_theme(&mut self, theme: Theme) -> Result<(), ViewerError> {
         self.borrow_mut().apply_theme(theme)
+    }
+
+    fn apply_body_font(&mut self, body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError> {
+        self.borrow_mut().apply_body_font(body_font)
     }
 
     #[cfg(windows)]
@@ -787,7 +796,51 @@ impl ViewerUi for SciterWindow {
         Ok(())
     }
 
-    #[cfg(windows)]
+    fn apply_body_font(&mut self, body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError> {
+        #[cfg(windows)]
+        {
+            let script = match body_font {
+                Some(settings) => {
+                    let family = css_font_family_str(&settings.family_name);
+                    let size_whole = settings.point_size_tenths / 10;
+                    let size_frac = settings.point_size_tenths % 10;
+                    let size_str = if size_frac == 0 {
+                        format!("{}pt", size_whole)
+                    } else {
+                        format!("{}.{}pt", size_whole, size_frac)
+                    };
+                    let family_json = family.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!(
+                        r#"(function() {{
+  var r = document;
+  var mb = r.$(".markdown-body");
+  if (mb) {{
+    mb.style.set({{ fontFamily: "{family_json}", fontSize: "{size_str}" }});
+  }}
+}})();"#,
+                        family_json = family_json,
+                        size_str = size_str,
+                    )
+                }
+                None => r#"(function() {
+  var r = document;
+  var mb = r.$(".markdown-body");
+  if (mb) {
+    mb.style.set({ fontFamily: "", fontSize: "" });
+  }
+})();"#
+                .to_string(),
+            };
+            let _ = self.api.eval_document_script(self.window, &script);
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = body_font;
+        }
+
+        Ok(())
+    }
     fn run_event_loop(&mut self) -> Result<(), ViewerError> {
         self.api.run_app_loop();
         Ok(())
@@ -796,6 +849,14 @@ impl ViewerUi for SciterWindow {
     #[cfg(not(windows))]
     fn run_event_loop(&mut self) -> Result<(), ViewerError> {
         run_sciter_event_loop(self.window)
+    }
+}
+
+fn css_font_family_str(name: &str) -> String {
+    if name.contains(' ') {
+        format!("\"{}\", \"Segoe UI\", sans-serif", name)
+    } else {
+        format!("{}, \"Segoe UI\", sans-serif", name)
     }
 }
 

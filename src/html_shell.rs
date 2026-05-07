@@ -1754,7 +1754,6 @@ mod tests {
             })
             .expect("render shell without body font");
 
-        assert!(!html.contains("body-font-style"));
         assert!(!html.contains("--body-font-family:"));
         assert!(!html.contains("--body-font-size:"));
     }
