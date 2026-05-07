@@ -1584,6 +1584,9 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     wparam: usize,
     lparam: isize,
 ) -> isize {
+    // Right-clicks on window-caption are handled as non-client messages on Windows.
+    // Route this path into JS so recent-files popup behavior stays available even
+    // when Sciter does not dispatch DOM contextmenu events for caption elements.
     if msg == WM_NCRBUTTONUP && wparam == HTCAPTION {
         if show_recent_files_popup_from_native_caption(hwnd) {
             return 0;

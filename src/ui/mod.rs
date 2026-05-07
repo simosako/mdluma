@@ -704,7 +704,7 @@ if (JSON.stringify(calls) !== JSON.stringify([
     }
 
     #[test]
-    fn titlebar_interaction_script_ignores_disabled_controls_and_limits_drag_region() {
+    fn titlebar_interaction_script_ignores_disabled_controls() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
             .read_text_asset(UiTextAsset::AppJs)
@@ -755,9 +755,6 @@ function createTarget(options) {
     closest(selector) {
       if (selector === "[data-action]") {
         return values.actionTarget || null;
-      }
-      if (selector === "[data-drag-region]") {
-        return values.dragRegion || null;
       }
       return null;
     },

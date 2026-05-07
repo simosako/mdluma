@@ -1057,13 +1057,17 @@ function showRecentFilesPopup(target) {
 }
 
 function showRecentFilesFromNativeCaption() {
+  // Invoked from Win32 WM_NCRBUTTONUP/HTCAPTION bridge when Sciter's
+  // window-caption role absorbs contextmenu events in the title bar.
   showRecentFilesPopup(currentFileElement());
 }
 
-function bindWindowDragHandlers() {
+function bindTitlebarRecentFilesContextMenu() {
   var fileNameEl = currentFileElement();
   if (!fileNameEl || typeof fileNameEl.addEventListener !== "function") return false;
 
+  // Keep a DOM fallback for cases where contextmenu is delivered to the
+  // file-name element (non-caption contexts or future title bar changes).
   fileNameEl.addEventListener("contextmenu", function(evt) {
     evt.preventDefault();
     showRecentFilesPopup(fileNameEl);
@@ -1103,7 +1107,7 @@ function initializeInteractions() {
     bindDirectOpenHandler();
     bindSearchHandlers();
     bindKeyboardShortcuts();
-    bindWindowDragHandlers();
+    bindTitlebarRecentFilesContextMenu();
     bindRecentFilesMenuHandler();
   }
 
@@ -1149,6 +1153,7 @@ if (typeof globalThis !== "undefined") {
     requestExternalEditorSetting,
   });
 
+  // Stable global entrypoint for native caption right-click handling.
   globalThis.__mdlumaShowRecentFilesFromNativeCaption = showRecentFilesFromNativeCaption;
 }
 
