@@ -6,10 +6,11 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWLP_WNDPROC, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE, WM_DROPFILES,
-    WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_SYSMENU,
+    GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE,
+    WM_DROPFILES, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
 #[cfg(windows)]
@@ -478,6 +479,14 @@ impl SciterApi {
                 bottom: 820 + cascade_top,
             }
         };
+        if !is_on_screen_rect(&frame) {
+            frame = SciterRect {
+                left: 100 + cascade_left,
+                top: 100 + cascade_top,
+                right: 1180 + cascade_left,
+                bottom: 820 + cascade_top,
+            };
+        }
         let creation_flags = viewer_window_creation_flags();
         self.configure_script_runtime_features()?;
         if should_install_init_script() {
@@ -1171,6 +1180,23 @@ fn read_window_cascade_offset() -> (i32, i32) {
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(0);
     (left, top)
+}
+
+#[cfg(windows)]
+fn is_on_screen_rect(rect: &SciterRect) -> bool {
+    let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let vw = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    if vw <= 0 || vh <= 0 {
+        return true;
+    }
+    rect.right > vx && rect.left < vx + vw && rect.bottom > vy && rect.top < vy + vh
+}
+
+#[cfg(not(windows))]
+fn is_on_screen_rect(_rect: &SciterRect) -> bool {
+    true
 }
 
 #[cfg(windows)]
