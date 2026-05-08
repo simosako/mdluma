@@ -56,6 +56,10 @@ The Sciter SDK documentation (`docs/` folder) can also be placed at `vendor/scit
 
 > **Note:** Only `sciter.dll` is tracked in this repository. The full SDK must be obtained separately in compliance with Sciter's license terms.
 
+### Updating sciter.dll
+
+When updating `sciter.dll` to a new version, the Rust bindings must be regenerated using bindgen. See `tools/bindgen/README.md` for instructions.
+
 ## Runtime Notes
 
 MDLuma uses the Sciter runtime for its embedded desktop UI.

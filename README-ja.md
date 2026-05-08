@@ -8,6 +8,8 @@ MDLuma は Rust で書かれた Windows 向け軽量デスクトップ Markdown 
 
 **高速起動・省メモリ** を特長としています。Rust でコンパクトに実装し、レンダリングには [Sciter](https://sciter.com)（軽量な HTML/CSS/JS エンジン）を利用することで、フル WebView ベースや Electron ベースのアプローチに比べてオーバーヘッドを抑えています。
 
+![screenshot](images/mdluma-top.jpg)
+
 ## 機能
 
 - テーブル、ハイパーリンクを含む基本的な Markdown 構文に対応
@@ -53,6 +55,10 @@ cargo test
 Sciter SDK のドキュメント（`docs/` フォルダ）も `vendor/sciter-js-sdk-main/docs/` に配置することで、Sciter の API や動作、詳細をオフラインで参照できるようになります。
 
 > **注:** このリポジトリでは `sciter.dll` のみを追跡しています。SDK 全体は Sciter のライセンス条件に従って別途入手してください。
+
+### sciter.dll の更新
+
+`sciter.dll` を新しいバージョンに更新する場合、bindgen を使って Rust のバインディングを再生成する必要があります。手順は `tools/bindgen/README.md` を参照してください。
 
 ## ランタイムに関する注意
 
