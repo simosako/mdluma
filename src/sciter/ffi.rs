@@ -78,9 +78,7 @@ const SCITER_SET_SCRIPT_RUNTIME_FEATURES: u32 = 8;
 #[cfg(debug_assertions)]
 const SCITER_SET_DEBUG_MODE: u32 = 10;
 const SCITER_SET_INIT_SCRIPT: u32 = 13;
-const SCRIPT_RUNTIME_ALLOW_FILE_IO: usize = 0x00000001;
-const SCRIPT_RUNTIME_ALLOW_SYSINFO: usize = 0x00000008;
-const SCRIPT_RUNTIME_ALLOW_CMODULES: usize = 0x00000010;
+const SCRIPT_RUNTIME_VIEWER_FLAGS: usize = 0;
 const SW_RESIZEABLE: u32 = 1 << 2;
 const SW_MAIN: u32 = 1 << 7;
 #[cfg(test)]
@@ -550,14 +548,11 @@ impl SciterApi {
     }
 
     fn configure_script_runtime_features(&self) -> Result<(), SciterRuntimeError> {
-        let flags = SCRIPT_RUNTIME_ALLOW_FILE_IO
-            | SCRIPT_RUNTIME_ALLOW_SYSINFO
-            | SCRIPT_RUNTIME_ALLOW_CMODULES;
         let configured = unsafe {
             (self.sciter_set_option)(
                 std::ptr::null_mut(),
                 SCITER_SET_SCRIPT_RUNTIME_FEATURES,
-                flags,
+                SCRIPT_RUNTIME_VIEWER_FLAGS,
             )
         };
 
