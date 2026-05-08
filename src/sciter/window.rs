@@ -760,6 +760,7 @@ impl ViewerUi for SciterWindow {
                 r#"(function() {{
   document.attributes["theme"] = "{theme_attr}";
   var groups = [
+    "[data-role='titlebar-brand'] img",
     "[data-role='future-controls'] img",
     "[data-role='window-controls'] img",
     ".search-panel img",
