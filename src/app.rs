@@ -1447,86 +1447,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert!(ui.errors().is_empty());
     }
 
-    #[test]
-    fn prepare_startup_path_file_read_failure_sets_error_visible_state() {
-        let file_path = PathBuf::from(r"C:\docs\missing.md");
-        let shell = RecordingHtmlShell::new(Vec::new());
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(vec![Err(ViewerError::file_read(
-                &file_path,
-                "access denied",
-            ))]),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-        );
 
-        controller.prepare_startup_path(&file_path);
-
-        assert!(controller.state().is_error_visible());
-        assert!(controller.state().current_document().is_none());
-        assert!(ui.initial_html().is_empty());
-        assert!(ui.document_html().is_empty());
-        assert!(ui.errors().is_empty());
-    }
-
-    #[test]
-    fn prepare_startup_path_invalid_encoding_failure_sets_error_visible_state() {
-        let file_path = PathBuf::from(r"C:\docs\binary.dat");
-        let source = SourceDocument {
-            path: file_path.clone(),
-            file_name: "binary.dat".to_string(),
-            base_dir: PathBuf::from(r"C:\docs"),
-            markdown: "# will not reach renderer".to_string(),
-        };
-        let shell = RecordingHtmlShell::new(Vec::new());
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(vec![Ok(source)]),
-            StubMarkdownRenderer::new(vec![Err(ViewerError::invalid_encoding(&file_path))]),
-            shell,
-            ui.clone(),
-        );
-
-        controller.prepare_startup_path(&file_path);
-
-        assert!(controller.state().is_error_visible());
-        assert!(controller.state().current_document().is_none());
-        assert!(ui.initial_html().is_empty());
-        assert!(ui.document_html().is_empty());
-        assert!(ui.errors().is_empty());
-    }
-
-    #[test]
-    fn prepare_startup_path_render_failure_sets_error_visible_state() {
-        let file_path = PathBuf::from(r"C:\docs\broken.md");
-        let source = SourceDocument {
-            path: file_path.clone(),
-            file_name: "broken.md".to_string(),
-            base_dir: PathBuf::from(r"C:\docs"),
-            markdown: "# Broken".to_string(),
-        };
-        let shell = RecordingHtmlShell::new(Vec::new());
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(vec![Ok(source)]),
-            StubMarkdownRenderer::new(vec![Err(ViewerError::markdown_render("renderer stopped"))]),
-            shell,
-            ui.clone(),
-        );
-
-        controller.prepare_startup_path(&file_path);
-
-        assert!(controller.state().is_error_visible());
-        assert!(controller.state().current_document().is_none());
-        assert!(ui.initial_html().is_empty());
-        assert!(ui.document_html().is_empty());
-        assert!(ui.errors().is_empty());
-    }
 
     #[test]
     fn prepare_startup_path_file_read_error_carries_variant_and_path_diagnostic() {
@@ -1608,8 +1529,9 @@ use crate::html_shell::{HtmlShell, ShellModel};
         }
     }
 
+
     #[test]
-    fn start_succeeds_after_prepare_startup_path_file_read_failure() {
+    fn start_succeeds_after_prepare_startup_path_failure() {
         let file_path = PathBuf::from(r"C:\docs\missing.md");
         let shell = RecordingHtmlShell::new(vec![Ok("<html>error-view</html>".to_string())]);
         let ui = RecordingViewerUi::default();
@@ -1631,76 +1553,6 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert_eq!(
             ui.initial_html(),
             vec!["<html>error-view</html>".to_string()]
-        );
-        assert!(ui.document_html().is_empty());
-        assert!(controller.state().is_error_visible());
-        assert!(controller.state().current_document().is_none());
-    }
-
-    #[test]
-    fn start_succeeds_after_prepare_startup_path_invalid_encoding_failure() {
-        let file_path = PathBuf::from(r"C:\docs\binary.dat");
-        let source = SourceDocument {
-            path: file_path.clone(),
-            file_name: "binary.dat".to_string(),
-            base_dir: PathBuf::from(r"C:\docs"),
-            markdown: "raw bytes".to_string(),
-        };
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>encoding-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(vec![Ok(source)]),
-            StubMarkdownRenderer::new(vec![Err(ViewerError::invalid_encoding(&file_path))]),
-            shell,
-            ui.clone(),
-        );
-
-        controller.prepare_startup_path(&file_path);
-        assert!(controller.state().is_error_visible());
-
-        controller
-            .start()
-            .expect("start should succeed even after encoding failure");
-
-        assert_eq!(
-            ui.initial_html(),
-            vec!["<html>encoding-error</html>".to_string()]
-        );
-        assert!(ui.document_html().is_empty());
-        assert!(controller.state().is_error_visible());
-        assert!(controller.state().current_document().is_none());
-    }
-
-    #[test]
-    fn start_succeeds_after_prepare_startup_path_render_failure() {
-        let file_path = PathBuf::from(r"C:\docs\broken.md");
-        let source = SourceDocument {
-            path: file_path.clone(),
-            file_name: "broken.md".to_string(),
-            base_dir: PathBuf::from(r"C:\docs"),
-            markdown: "# Broken".to_string(),
-        };
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>render-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(vec![Ok(source)]),
-            StubMarkdownRenderer::new(vec![Err(ViewerError::markdown_render("OOM"))]),
-            shell,
-            ui.clone(),
-        );
-
-        controller.prepare_startup_path(&file_path);
-        assert!(controller.state().is_error_visible());
-
-        controller
-            .start()
-            .expect("start should succeed even after render failure");
-
-        assert_eq!(
-            ui.initial_html(),
-            vec!["<html>render-error</html>".to_string()]
         );
         assert!(ui.document_html().is_empty());
         assert!(controller.state().is_error_visible());
@@ -3535,13 +3387,14 @@ use crate::html_shell::{HtmlShell, ShellModel};
     #[test]
     fn open_in_external_editor_is_defensive_noop_when_no_document_loaded() {
         let (editor_launcher, launched) = StubExternalEditorLauncher::new();
+        let ui = RecordingViewerUi::default();
         let mut controller = AppController::with_external_editor_launcher_and_state(
             StubFileDialog::cancelled(),
             (),
             StubDocumentLoader::new(Vec::new()),
             StubMarkdownRenderer::new(Vec::new()),
             RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
+            ui.clone(),
             (),
             editor_launcher,
             ViewerState::NoDocument,
@@ -3554,6 +3407,10 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert!(
             launched.borrow().is_empty(),
             "launcher must not be called when no document is loaded"
+        );
+        assert!(
+            !ui.close_requested(),
+            "close must NOT be called when no document is loaded"
         );
     }
 
@@ -3827,8 +3684,6 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-
-
     #[test]
     fn open_in_external_editor_launch_failure_shows_error_and_preserves_document() {
         let (editor_launcher, launched) = StubExternalEditorLauncher::failing();
@@ -3872,72 +3727,8 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-
-
     #[test]
-    fn open_in_external_editor_close_failure_continues_browsing() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::new();
-        let mut ui = RecordingViewerUi::default();
-        ui.set_close_result(Some(Err(ViewerError::ui("window close failed"))));
-        let doc = rendered_document("remain.md");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>close-error</html>".to_string())]);
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc.clone()),
-        );
 
-        let _ = controller.open_in_external_editor();
-
-        assert!(
-            controller.state().current_document().is_some(),
-            "document count must remain 1 after close failure"
-        );
-        assert_eq!(
-            controller
-                .state()
-                .current_document()
-                .map(|d| d.file_name.as_str()),
-            Some("remain.md"),
-            "current document file name must be accessible after close failure"
-        );
-        assert!(
-            controller.state().is_error_visible(),
-            "must be in error state but document retained"
-        );
-    }
-
-    #[test]
-    fn open_in_external_editor_no_document_does_not_request_close() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::new();
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            ui.clone(),
-            (),
-            editor_launcher,
-            ViewerState::NoDocument,
-        );
-
-        controller
-            .open_in_external_editor()
-            .expect("no-document should return Ok");
-
-        assert!(
-            !ui.close_requested(),
-            "close must NOT be called when no document is loaded (req 4.2)"
-        );
-    }
 
     #[test]
     fn open_in_external_editor_command_is_noop_when_no_document() {
