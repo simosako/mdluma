@@ -321,8 +321,6 @@ button:disabled {
 .error-area {
   color: var(--viewer-error);
   width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
   box-sizing: border-box;
   padding: 0 32px;
 }
@@ -334,8 +332,6 @@ button:disabled {
 .copy-status {
   color: var(--viewer-error);
   width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
   box-sizing: border-box;
   padding: 16px 32px 0;
 }
@@ -355,9 +351,7 @@ button:disabled {
 
 .content {
   display: block;
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
+  width: *;
   box-sizing: border-box;
   padding: 28px 32px 48px;
   line-height: 1.65;
@@ -369,6 +363,7 @@ button:disabled {
 
 .markdown-body {
   display: block;
+  width: *;
   color: var(--viewer-fg);
   min-height: 120px;
   font-family: var(--body-font-family), inherit;
@@ -377,6 +372,7 @@ button:disabled {
 
 .markdown-selection-host {
   display: block;
+  width: *;
 }
 
 .markdown-selection-host[selectable] {
@@ -414,6 +410,8 @@ button:disabled {
 .markdown-body blockquote,
 .markdown-body pre,
 .markdown-body table {
+  width: *;
+  box-sizing: border-box;
   margin: 0 0 1rem;
 }
 

@@ -193,7 +193,8 @@ mod tests {
         assert!(css.contains(".markdown-body"));
         assert!(css.contains(".markdown-body table"));
         assert!(css.contains(".markdown-body pre"));
-        assert!(css.contains("width: 100%"));
+        assert!(css.contains("width: *"));
+        assert!(!css.contains("max-width: 1100px"));
         assert!(js.contains("open-file-requested"));
         assert!(js.contains("requestOpenFile"));
         assert!(js.contains("Window.this.xcall"));
