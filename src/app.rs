@@ -19,6 +19,36 @@ fn report_viewer_error(error: &ViewerError) {
     let _ = error;
 }
 
+struct LoadedSettings {
+    theme: Theme,
+    body_font: Option<BodyFontSettings>,
+    external_editor: Option<PathBuf>,
+    recent_files: Vec<PathBuf>,
+    settings_file: SettingsFile,
+    window_geometry: Option<WindowGeometry>,
+}
+
+impl LoadedSettings {
+    fn from_file(settings_file: SettingsFile) -> Self {
+        let settings = settings_file.load();
+        Self {
+            theme: Theme::from(settings.theme),
+            body_font: settings.body_font,
+            external_editor: settings.external_editor,
+            recent_files: settings.recent_files,
+            settings_file,
+            window_geometry: settings.window_geometry,
+        }
+    }
+}
+
+#[cfg(test)]
+fn create_test_settings_file() -> SettingsFile {
+    let dir = std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    SettingsFile::with_path(dir.join("settings.json"))
+}
+
 pub struct AppController<D, F, L, R, H, U, S = (), E = ()> {
     dialog: D,
     font_dialog: F,
@@ -47,11 +77,7 @@ where
     U: ViewerUi,
 {
     pub fn new(dialog: D, loader: L, renderer: R, shell: H, ui: U) -> Self {
-        let test_settings_dir =
-            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&test_settings_dir);
-        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
-        let settings = settings_file.load();
+        let s = LoadedSettings::from_file(create_test_settings_file());
         Self {
             dialog,
             font_dialog: (),
@@ -62,12 +88,12 @@ where
             launcher: (),
             external_editor_launcher: (),
             state: ViewerState::NoDocument,
-            theme: Theme::from(settings.theme),
-            body_font: settings.body_font,
-            external_editor: settings.external_editor,
-            recent_files: settings.recent_files,
-            settings_file,
-            window_geometry: settings.window_geometry,
+            theme: s.theme,
+            body_font: s.body_font,
+            external_editor: s.external_editor,
+            recent_files: s.recent_files,
+            settings_file: s.settings_file,
+            window_geometry: s.window_geometry,
         }
     }
 
@@ -79,11 +105,7 @@ where
         ui: U,
         state: ViewerState,
     ) -> Self {
-        let test_settings_dir =
-            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&test_settings_dir);
-        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
-        let settings = settings_file.load();
+        let s = LoadedSettings::from_file(create_test_settings_file());
         Self {
             dialog,
             font_dialog: (),
@@ -94,12 +116,12 @@ where
             launcher: (),
             external_editor_launcher: (),
             state,
-            theme: Theme::from(settings.theme),
-            body_font: settings.body_font,
-            external_editor: settings.external_editor,
-            recent_files: settings.recent_files,
-            settings_file,
-            window_geometry: settings.window_geometry,
+            theme: s.theme,
+            body_font: s.body_font,
+            external_editor: s.external_editor,
+            recent_files: s.recent_files,
+            settings_file: s.settings_file,
+            window_geometry: s.window_geometry,
         }
     }
 }
@@ -128,13 +150,13 @@ where
 
     #[cfg(test)]
     pub fn with_settings_file(mut self, settings_file: SettingsFile) -> Self {
-        let settings = settings_file.load();
-        self.theme = Theme::from(settings.theme);
-        self.body_font = settings.body_font;
-        self.external_editor = settings.external_editor;
-        self.recent_files = settings.recent_files;
-        self.window_geometry = settings.window_geometry;
-        self.settings_file = settings_file;
+        let s = LoadedSettings::from_file(settings_file);
+        self.theme = s.theme;
+        self.body_font = s.body_font;
+        self.external_editor = s.external_editor;
+        self.recent_files = s.recent_files;
+        self.window_geometry = s.window_geometry;
+        self.settings_file = s.settings_file;
         self
     }
 
@@ -418,8 +440,7 @@ where
         launcher: S,
         external_editor_launcher: E,
     ) -> Self {
-        let settings_file = SettingsFile::new();
-        let settings = settings_file.load();
+        let s = LoadedSettings::from_file(SettingsFile::new());
         Self {
             dialog,
             font_dialog,
@@ -430,12 +451,12 @@ where
             launcher,
             external_editor_launcher,
             state: ViewerState::NoDocument,
-            theme: Theme::from(settings.theme),
-            body_font: settings.body_font,
-            external_editor: settings.external_editor,
-            recent_files: settings.recent_files,
-            settings_file,
-            window_geometry: settings.window_geometry,
+            theme: s.theme,
+            body_font: s.body_font,
+            external_editor: s.external_editor,
+            recent_files: s.recent_files,
+            settings_file: s.settings_file,
+            window_geometry: s.window_geometry,
         }
     }
 
@@ -463,11 +484,7 @@ where
         external_editor_launcher: E,
         state: ViewerState,
     ) -> Self {
-        let test_settings_dir =
-            std::env::temp_dir().join(format!("mdluma-test-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&test_settings_dir);
-        let settings_file = SettingsFile::with_path(test_settings_dir.join("settings.json"));
-        let settings = settings_file.load();
+        let s = LoadedSettings::from_file(create_test_settings_file());
         Self {
             dialog,
             font_dialog,
@@ -478,12 +495,12 @@ where
             launcher: child_launcher,
             external_editor_launcher,
             state,
-            theme: Theme::from(settings.theme),
-            body_font: settings.body_font,
-            external_editor: settings.external_editor,
-            recent_files: settings.recent_files,
-            settings_file,
-            window_geometry: settings.window_geometry,
+            theme: s.theme,
+            body_font: s.body_font,
+            external_editor: s.external_editor,
+            recent_files: s.recent_files,
+            settings_file: s.settings_file,
+            window_geometry: s.window_geometry,
         }
     }
 
