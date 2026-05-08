@@ -6,10 +6,11 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED,
-    WM_APP, WM_CLOSE, WM_DROPFILES, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
+    GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE,
+    WM_DROPFILES, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
 #[cfg(windows)]
@@ -1183,15 +1184,14 @@ fn read_window_cascade_offset() -> (i32, i32) {
 
 #[cfg(windows)]
 fn is_on_screen_rect(rect: &SciterRect) -> bool {
-    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-    let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-    if screen_w <= 0 || screen_h <= 0 {
+    let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let vw = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    if vw <= 0 || vh <= 0 {
         return true;
     }
-    let visible_w = (rect.right - rect.left).min(screen_w);
-    let visible_h = (rect.bottom - rect.top).min(screen_h);
-    rect.left < screen_w && rect.left + visible_w > 0
-        && rect.top < screen_h && rect.top + visible_h > 0
+    rect.right > vx && rect.left < vx + vw && rect.bottom > vy && rect.top < vy + vh
 }
 
 #[cfg(not(windows))]
