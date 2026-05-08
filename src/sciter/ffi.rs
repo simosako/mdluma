@@ -1673,7 +1673,7 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     if msg == WM_WINDOWPOSCHANGING {
         if std::ptr::read(std::ptr::addr_of!(DL_POSITION_LOCKED)) {
             let pos = &mut *(lparam as *mut WindowPos);
-            pos.flags |= SWP_NOMOVE;
+            pos.flags |= SWP_NOMOVE | SWP_NOSIZE;
         }
     }
 
