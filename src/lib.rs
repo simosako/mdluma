@@ -3,6 +3,7 @@ mod debug_log;
 mod document;
 mod errors;
 mod external_editor;
+mod html_sanitizer;
 mod html_shell;
 mod markdown;
 mod open_paths;
