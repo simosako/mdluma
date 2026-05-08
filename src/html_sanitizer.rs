@@ -11,34 +11,6 @@ pub(crate) fn sanitize_body_html(html: &str, base_dir: Option<&std::path::Path>)
                 let tag = &html[tag_start..=tag_end];
                 sanitized.push_str(&sanitize_tag(tag, base_dir));
                 cursor = tag_end + 1;
-
-                if is_style_opening_tag(tag) {
-                    match find_case_insensitive(&html[cursor..], "</style>") {
-                        Some(relative_close_start) => {
-                            let close_start = cursor + relative_close_start;
-                            sanitized.push_str(&sanitize_style_block(&html[cursor..close_start]));
-
-                            match find_tag_end(html, close_start) {
-                                Some(close_end) => {
-                                    sanitized.push_str(&sanitize_tag(
-                                        &html[close_start..=close_end],
-                                        base_dir,
-                                    ));
-                                    cursor = close_end + 1;
-                                }
-                                None => {
-                                    sanitized
-                                        .push_str(&sanitize_tag(&html[close_start..], base_dir));
-                                    return sanitized;
-                                }
-                            }
-                        }
-                        None => {
-                            sanitized.push_str(&sanitize_style_block(&html[cursor..]));
-                            return sanitized;
-                        }
-                    }
-                }
             }
             None => {
                 sanitized.push_str(&html[tag_start..]);
@@ -151,12 +123,6 @@ fn find_tag_end(html: &str, tag_start: usize) -> Option<usize> {
     }
 
     None
-}
-
-fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
-    haystack
-        .to_ascii_lowercase()
-        .find(&needle.to_ascii_lowercase())
 }
 
 fn sanitize_tag(tag: &str, base_dir: Option<&std::path::Path>) -> String {
@@ -368,50 +334,13 @@ fn parsed_tag_name(tag: &str) -> Option<(&str, bool)> {
 }
 
 fn is_allowed_render_body_tag(tag_name: &str) -> bool {
-    matches!(
-        tag_name.to_ascii_lowercase().as_str(),
-        "a" | "abbr"
-            | "b"
-            | "blockquote"
-            | "br"
-            | "code"
-            | "del"
-            | "details"
-            | "div"
-            | "em"
-            | "h1"
-            | "h2"
-            | "h3"
-            | "h4"
-            | "h5"
-            | "h6"
-            | "hr"
-            | "i"
-            | "img"
-            | "input"
-            | "kbd"
-            | "li"
-            | "mark"
-            | "ol"
-            | "p"
-            | "pre"
-            | "s"
-            | "small"
-            | "span"
-            | "strong"
-            | "sub"
-            | "summary"
-            | "sup"
-            | "table"
-            | "tbody"
-            | "td"
-            | "tfoot"
-            | "th"
-            | "thead"
-            | "tr"
-            | "u"
-            | "ul"
-    )
+    const ALLOWED: &[&str] = &[
+        "a", "abbr", "b", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2",
+        "h3", "h4", "h5", "h6", "hr", "i", "img", "input", "kbd", "li", "mark", "ol", "p", "pre",
+        "s", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot",
+        "th", "thead", "tr", "u", "ul",
+    ];
+    ALLOWED.iter().any(|&allowed| tag_name.eq_ignore_ascii_case(allowed))
 }
 
 fn is_allowed_render_body_attribute(tag_name: &str, attribute: &str) -> bool {
@@ -445,32 +374,6 @@ fn is_allowed_render_body_attribute(tag_name: &str, attribute: &str) -> bool {
         }
         _ => false,
     }
-}
-
-fn is_style_opening_tag(tag: &str) -> bool {
-    if !tag.starts_with('<') || tag.len() <= 2 {
-        return false;
-    }
-
-    let bytes = tag.as_bytes();
-    if matches!(bytes[1], b'/' | b'!' | b'?') {
-        return false;
-    }
-
-    let mut cursor = 1;
-    while cursor < tag.len() - 1 && bytes[cursor].is_ascii_whitespace() {
-        cursor += 1;
-    }
-
-    let name_start = cursor;
-    while cursor < tag.len() - 1
-        && !bytes[cursor].is_ascii_whitespace()
-        && !matches!(bytes[cursor], b'/' | b'>')
-    {
-        cursor += 1;
-    }
-
-    tag[name_start..cursor].eq_ignore_ascii_case("style")
 }
 
 #[derive(Clone, Copy)]
@@ -521,76 +424,6 @@ fn looks_like_absolute_path_or_url(value: &str) -> bool {
     value.starts_with('/')
         || value.starts_with('\\')
         || (value.len() >= 2 && value.as_bytes()[1] == b':')
-}
-
-fn sanitize_style_block(css: &str) -> String {
-    if contains_remote_css_reference(css) {
-        String::new()
-    } else {
-        css.to_string()
-    }
-}
-
-fn contains_remote_css_reference(css: &str) -> bool {
-    contains_remote_css_url(css) || contains_remote_css_import(css)
-}
-
-fn contains_remote_css_url(css: &str) -> bool {
-    let lower = css.to_ascii_lowercase();
-    let mut search_from = 0;
-
-    while let Some(relative_index) = lower[search_from..].find("url(") {
-        let value_start = search_from + relative_index + 4;
-        match css[value_start..].find(')') {
-            Some(relative_end) => {
-                let value = &css[value_start..value_start + relative_end];
-                if is_remote_resource_reference(strip_css_wrapping_quotes(value)) {
-                    return true;
-                }
-
-                search_from = value_start + relative_end + 1;
-            }
-            None => return false,
-        }
-    }
-
-    false
-}
-
-fn contains_remote_css_import(css: &str) -> bool {
-    let lower = css.to_ascii_lowercase();
-    let mut search_from = 0;
-
-    while let Some(relative_index) = lower[search_from..].find("@import") {
-        let import_start = search_from + relative_index + "@import".len();
-        let remainder = &css[import_start..];
-        let trimmed = remainder.trim_start();
-
-        if let Some(rest) = trimmed.strip_prefix("url(") {
-            if let Some(end) = rest.find(')') {
-                if is_remote_resource_reference(strip_css_wrapping_quotes(&rest[..end])) {
-                    return true;
-                }
-            }
-        } else {
-            let value_end = trimmed
-                .find(|character: char| character.is_ascii_whitespace() || character == ';')
-                .unwrap_or(trimmed.len());
-            if is_remote_resource_reference(strip_css_wrapping_quotes(&trimmed[..value_end])) {
-                return true;
-            }
-        }
-
-        search_from = import_start;
-    }
-
-    false
-}
-
-fn strip_css_wrapping_quotes(value: &str) -> &str {
-    value
-        .trim()
-        .trim_matches(|character| matches!(character, '\'' | '"'))
 }
 
 fn is_remote_resource_reference(value: &str) -> bool {

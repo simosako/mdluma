@@ -67,9 +67,8 @@ pub fn run() -> Result<(), StartupError> {
         &mut |message| eprintln!("{message}"),
         distribution_dir,
         |prerequisites| SciterRuntime::load(prerequisites),
-        |distribution_dir, runtime| {
+        |_distribution_dir, runtime| {
             build_startup_controller(
-                distribution_dir,
                 runtime,
                 |runtime| {
                     let settings_file = crate::settings::SettingsFile::new();
@@ -190,33 +189,7 @@ fn runtime_distribution_dir() -> Result<std::path::PathBuf, StartupError> {
         })
 }
 
-#[cfg(test)]
-fn start_application_with<ValidateRuntime, BuildController, U, S, E>(
-    distribution_dir: std::path::PathBuf,
-    validate_runtime: ValidateRuntime,
-    build_controller: BuildController,
-) -> Result<(), StartupError>
-where
-    U: Clone + ViewerUi + sciter::window::ViewerCommandBinder,
-    S: ViewerChildLauncher,
-    E: ExternalEditorLauncher,
-    ValidateRuntime: FnOnce(RuntimePrerequisites) -> Result<SciterRuntime, ViewerError>,
-    BuildController: FnOnce(
-        std::path::PathBuf,
-        SciterRuntime,
-    ) -> Result<StartupController<U, S, E>, ViewerError>,
-{
-    let prerequisites = RuntimePrerequisites::from_distribution_dir(&distribution_dir);
-    let runtime = validate_runtime(prerequisites).map_err(StartupError::from_viewer_error)?;
-    let controller =
-        build_controller(distribution_dir, runtime).map_err(StartupError::from_viewer_error)?;
-
-    controller.run().map_err(StartupError::from_viewer_error)?;
-    Ok(())
-}
-
 fn build_startup_controller<U, S, E>(
-    distribution_dir: std::path::PathBuf,
     runtime: SciterRuntime,
     ui_factory: impl FnOnce(SciterRuntime) -> Result<U, ViewerError>,
     launcher: S,
@@ -227,7 +200,6 @@ where
     S: ViewerChildLauncher,
     E: ExternalEditorLauncher,
 {
-    let _ = distribution_dir;
     let shell = DefaultHtmlShell::new(EmbeddedUiAssets);
     let ui = ui_factory(runtime)?;
 
@@ -253,7 +225,7 @@ mod tests {
         ViewerCommand, ViewerCommandBinder, ViewerCommandHandler, ViewerUi,
     };
     use crate::settings::SettingsFile;
-    use crate::{build_startup_controller, start_application_with};
+    use crate::{build_startup_controller, start_viewer_with};
     use std::cell::RefCell;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -274,7 +246,8 @@ mod tests {
             .map(|relative_path| distribution_dir.join(relative_path))
             .collect();
 
-        start_application_with(
+        start_viewer_with(
+            None,
             distribution_dir.clone(),
             {
                 let observed_prerequisites = observed_prerequisites.clone();
@@ -286,7 +259,7 @@ mod tests {
             {
                 let ui = ui.clone();
                 move |distribution_dir, runtime| {
-                    build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
+                    build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
                 }
             },
         )
@@ -330,7 +303,8 @@ mod tests {
         let runtime_file = distribution_dir.join(SCITER_DLL_NAME);
 
         let error =
-            start_application_with(
+            start_viewer_with(
+                None,
                 distribution_dir,
                 |_| Err(ViewerError::runtime_missing(&runtime_file)),
                 |_distribution_dir,
@@ -364,10 +338,10 @@ mod tests {
         let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
 
-        start_application_with(distribution_dir.clone(), |_| Ok(fake_runtime()), {
+        start_viewer_with(None, distribution_dir.clone(), |_| Ok(fake_runtime()), {
             let ui = ui.clone();
             move |distribution_dir, runtime| {
-                build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
+                build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
             }
         })
         .expect("startup baseline should succeed");
@@ -468,10 +442,10 @@ mod tests {
         let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
 
-        start_application_with(distribution_dir.clone(), |_| Ok(fake_runtime()), {
+        start_viewer_with(None, distribution_dir.clone(), |_| Ok(fake_runtime()), {
             let ui = ui.clone();
             move |distribution_dir, runtime| {
-                build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
+                build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
             }
         })
         .expect("startup should succeed");
@@ -514,7 +488,7 @@ mod tests {
             {
                 let ui = ui.clone();
                 move |distribution_dir, runtime| {
-                    build_startup_controller(distribution_dir, runtime, |_| Ok(ui.clone()), (), ())
+                    build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
                         .map(|c| {
                             c.with_settings_file(SettingsFile::with_path(
                                 test_settings_path.clone(),
@@ -1003,7 +977,6 @@ mod tests {
         let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
 
         let mut controller = build_startup_controller(
-            distribution_dir,
             fake_runtime(),
             |_| Ok(ui.clone()),
             (),
@@ -1040,7 +1013,7 @@ mod tests {
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
 
         let controller =
-            build_startup_controller(distribution_dir, fake_runtime(), |_| Ok(ui.clone()), (), ())
+            build_startup_controller(fake_runtime(), |_| Ok(ui.clone()), (), ())
                 .expect("build controller with unit launchers should succeed");
 
         assert_eq!(ui.borrow().bind_count, 0, "controller not yet started");

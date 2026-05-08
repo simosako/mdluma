@@ -629,10 +629,6 @@ impl ViewerState {
             }
         }
     }
-
-    pub fn document_count(&self) -> usize {
-        usize::from(self.current_document().is_some())
-    }
 }
 
 #[cfg(test)]
@@ -673,11 +669,11 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 .map(|document| document.file_name.as_str()),
             Some("two.md")
         );
-        assert_eq!(replaced.document_count(), 1);
+        assert!(replaced.current_document().is_some());
 
         let error = replaced.with_error(ViewerError::markdown_render("renderer stopped"));
         assert!(error.is_error_visible());
-        assert_eq!(error.document_count(), 1);
+        assert!(error.current_document().is_some());
     }
 
     #[test]
@@ -929,7 +925,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 .map(|document| document.file_name.as_str()),
             Some("guide.md")
         );
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert_eq!(
             shell.recorded_file_names(),
             vec![Some("guide.md".to_string())]
@@ -969,7 +965,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
             .open_file_requested()
             .expect("large markdown open flow should succeed");
 
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert_eq!(
             controller
                 .state()
@@ -1148,7 +1144,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
             .open_file_requested()
             .expect("second open should replace the current document");
 
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert_eq!(
             controller
                 .state()
@@ -1454,7 +1450,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 .map(|document| document.file_name.as_str()),
             Some("readme.md")
         );
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert!(!controller.state().is_error_visible());
         assert!(ui.initial_html().is_empty());
         assert!(ui.document_html().is_empty());
@@ -1480,7 +1476,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         controller.prepare_startup_path(&file_path);
 
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
         assert!(ui.initial_html().is_empty());
         assert!(ui.document_html().is_empty());
         assert!(ui.errors().is_empty());
@@ -1508,7 +1504,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         controller.prepare_startup_path(&file_path);
 
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
         assert!(ui.initial_html().is_empty());
         assert!(ui.document_html().is_empty());
         assert!(ui.errors().is_empty());
@@ -1536,7 +1532,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         controller.prepare_startup_path(&file_path);
 
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
         assert!(ui.initial_html().is_empty());
         assert!(ui.document_html().is_empty());
         assert!(ui.errors().is_empty());
@@ -1562,7 +1558,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
 
         let state = controller.state();
         assert!(state.is_error_visible());
-        assert_eq!(state.document_count(), 0);
+        assert!(state.current_document().is_none());
         if let ViewerState::ErrorVisible { previous, error } = state {
             assert!(matches!(previous.as_deref(), Some(ViewerState::NoDocument)));
             assert_eq!(
@@ -1604,7 +1600,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
 
         let state = controller.state();
         assert!(state.is_error_visible());
-        assert_eq!(state.document_count(), 0);
+        assert!(state.current_document().is_none());
         if let ViewerState::ErrorVisible { previous, error } = state {
             assert!(matches!(previous.as_deref(), Some(ViewerState::NoDocument)));
             assert_eq!(
@@ -1648,7 +1644,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
         assert!(ui.document_html().is_empty());
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
     }
 
     #[test]
@@ -1683,7 +1679,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
         assert!(ui.document_html().is_empty());
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
     }
 
     #[test]
@@ -1718,7 +1714,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
         assert!(ui.document_html().is_empty());
         assert!(controller.state().is_error_visible());
-        assert_eq!(controller.state().document_count(), 0);
+        assert!(controller.state().current_document().is_none());
     }
 
     #[test]
@@ -1839,7 +1835,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
             Some(&existing),
             "empty path absolutization failure must not replace the current document (req 3.3)"
         );
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert_eq!(ui.document_html(), vec!["<html>error</html>".to_string()]);
         assert!(ui.errors().is_empty());
     }
@@ -1863,11 +1859,6 @@ use crate::html_shell::{HtmlShell, ShellModel};
         controller.prepare_startup_path(&empty_path);
 
         assert!(controller.state().is_error_visible());
-        assert_eq!(
-            controller.state().document_count(),
-            0,
-            "empty path startup failure must not load a document (req 3.1)"
-        );
         assert!(controller.state().current_document().is_none());
 
         controller
@@ -2104,7 +2095,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
             .open_dropped_files(vec![drop_path])
             .expect("drop replace should succeed");
 
-        assert_eq!(controller.state().document_count(), 1);
+        assert!(controller.state().current_document().is_some());
         assert_eq!(
             controller
                 .state()
@@ -3990,9 +3981,8 @@ use crate::html_shell::{HtmlShell, ShellModel};
 
         let _ = controller.open_in_external_editor();
 
-        assert_eq!(
-            controller.state().document_count(),
-            1,
+        assert!(
+            controller.state().current_document().is_some(),
             "document count must remain 1 after launch failure (req 5.3)"
         );
         assert_eq!(
@@ -4030,9 +4020,8 @@ use crate::html_shell::{HtmlShell, ShellModel};
 
         let _ = controller.open_in_external_editor();
 
-        assert_eq!(
-            controller.state().document_count(),
-            1,
+        assert!(
+            controller.state().current_document().is_some(),
             "document count must remain 1 after close failure"
         );
         assert_eq!(
@@ -4636,9 +4625,8 @@ use crate::html_shell::{HtmlShell, ShellModel};
             Some(&doc),
             "current document must be accessible after save failure (req 4.3)"
         );
-        assert_eq!(
-            controller.state().document_count(),
-            1,
+        assert!(
+            controller.state().current_document().is_some(),
             "document count must remain 1 after save failure (req 4.3)"
         );
         assert!(

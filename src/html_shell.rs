@@ -736,39 +736,6 @@ mod tests {
     }
 
     #[test]
-    fn local_only_shell_blocks_remote_css_in_style_attributes_and_style_blocks() {
-        let state = ViewerState::DocumentLoaded(RenderedDocument {
-            path: PathBuf::from(r"C:\docs\remote-css.md"),
-            file_name: "remote-css.md".to_string(),
-            base_dir: PathBuf::from(r"C:\docs"),
-            html_body: concat!(
-                "<div style=\"background-image:url(https://example.com/a.png)\">Styled</div>",
-                "<style>@import \"https://example.com/viewer.css\"; .note { color: red; }</style>",
-                "<p>Visible text</p>"
-            )
-            .to_string(),
-        });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with remote css sanitized");
-
-        assert!(!html.contains("style="));
-        assert!(html.contains("&lt;style&gt;&lt;/style&gt;"));
-        assert!(!html.contains("<style>@import"));
-        assert!(html.contains("Visible text"));
-        assert!(!html.contains("https://example.com/a.png"));
-        assert!(!html.contains("https://example.com/viewer.css"));
-    }
-
-    #[test]
     fn local_only_shell_removes_event_attributes_and_escapes_disallowed_embeds() {
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\unsafe-html.md"),
