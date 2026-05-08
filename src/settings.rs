@@ -102,8 +102,18 @@ fn deserialize_content_max_width_px<'de, D>(deserializer: D) -> Result<u16, D::E
 where
     D: serde::Deserializer<'de>,
 {
-    let px = u16::deserialize(deserializer)?;
-    Ok(normalize_content_max_width_px(px))
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let px = match value {
+        serde_json::Value::Number(number) => number
+            .as_u64()
+            .and_then(|v| u16::try_from(v).ok())
+            .or_else(|| number.as_i64().and_then(|v| u16::try_from(v).ok())),
+        _ => None,
+    };
+
+    Ok(px
+        .map(normalize_content_max_width_px)
+        .unwrap_or(DEFAULT_CONTENT_MAX_WIDTH_PX))
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -481,6 +491,23 @@ mod tests {
         let json = r#"{"theme":"light","content_max_width_px":320}"#;
         let settings: Settings =
             serde_json::from_str(json).expect("parse settings with invalid width");
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_invalid_content_max_width_px_does_not_drop_other_fields() {
+        let json = r#"{"theme":"dark","content_max_width_px":-10}"#;
+        let settings: Settings =
+            serde_json::from_str(json).expect("parse settings with negative width");
+        assert_eq!(settings.theme, ThemePreference::Dark);
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_non_integer_content_max_width_px_falls_back_to_default() {
+        let json = r#"{"theme":"light","content_max_width_px":980.5}"#;
+        let settings: Settings =
+            serde_json::from_str(json).expect("parse settings with floating width");
         assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
     }
 

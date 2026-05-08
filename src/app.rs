@@ -392,7 +392,15 @@ where
 
         if self.content_max_width_px != DEFAULT_CONTENT_MAX_WIDTH_PX {
             let replacement = format!("max-width: {}px;", self.content_max_width_px);
-            html = html.replacen("max-width: 1040px;", &replacement, 1);
+            let default_max_width = format!("max-width: {}px;", DEFAULT_CONTENT_MAX_WIDTH_PX);
+            let replaced = html.replacen(&default_max_width, &replacement, 1);
+            if replaced == html {
+                crate::debug_log!(
+                    "content max width override marker not found: expected '{default_max_width}'"
+                );
+            } else {
+                html = replaced;
+            }
         }
 
         Ok(html)
