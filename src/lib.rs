@@ -30,7 +30,7 @@ pub use debug_log::write_debug_log as __write_debug_log;
 pub use app::{RenderedDocument, ViewerState, APP_NAME};
 pub use document::{DocumentLoader, FileDocumentLoader, SourceDocument};
 pub use errors::{StartupError, ViewerError};
-pub use html_shell::{DefaultHtmlShell, HtmlShell, ResourcePolicy, ShellModel};
+pub use html_shell::{DefaultHtmlShell, HtmlShell, ShellModel};
 pub use markdown::{ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderer};
 pub use platform::{
     FileDialog, FontDialog, FontDialogResult, OpenFileResult, WindowChromeController,

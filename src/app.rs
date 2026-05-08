@@ -3,7 +3,7 @@ pub const APP_NAME: &str = "MDLuma";
 use crate::document::DocumentLoader;
 use crate::errors::ViewerError;
 use crate::external_editor::ExternalEditorLauncher;
-use crate::html_shell::{HtmlShell, ResourcePolicy, ShellModel};
+use crate::html_shell::{HtmlShell, ShellModel};
 use crate::markdown::MarkdownRenderer;
 use crate::open_paths::plan_drop_open;
 use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
@@ -375,7 +375,6 @@ where
         self.shell.render_shell(ShellModel {
             app_name: APP_NAME,
             state,
-            resource_policy: ResourcePolicy::LocalOnly,
             theme: self.theme,
             body_font: self.body_font.as_ref(),
             recent_files: &self.recent_files,
@@ -641,7 +640,7 @@ mod tests {
     use super::AppController;
     use crate::document::{DocumentLoader, SourceDocument};
     use crate::errors::ViewerError;
-    use crate::html_shell::{HtmlShell, ResourcePolicy, ShellModel};
+use crate::html_shell::{HtmlShell, ShellModel};
     use crate::markdown::MarkdownRenderer;
     use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
     use crate::sciter::window::{ViewerCommand, ViewerUi};
@@ -3303,7 +3302,6 @@ mod tests {
     impl HtmlShell for RecordingHtmlShell {
         fn render_shell(&self, model: ShellModel<'_>) -> Result<String, ViewerError> {
             assert_eq!(model.app_name, APP_NAME);
-            assert_eq!(model.resource_policy, ResourcePolicy::LocalOnly);
 
             let mut inner = self.inner.borrow_mut();
             if model.state.is_no_document() {

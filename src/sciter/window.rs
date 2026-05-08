@@ -7,7 +7,7 @@ use crate::sciter::ffi::{
 use crate::sciter::runtime::SciterRuntime;
 use crate::settings::BodyFontSettings;
 use crate::{
-    DefaultHtmlShell, EmbeddedUiAssets, HtmlShell, ResourcePolicy, ShellModel, Theme, ViewerError,
+    DefaultHtmlShell, EmbeddedUiAssets, HtmlShell, ShellModel, Theme, ViewerError,
     ViewerState, WindowChromeController, WindowsWindowChrome, APP_NAME,
 };
 use std::cell::RefCell;
@@ -875,7 +875,6 @@ fn render_runtime_error_shell(error: &ViewerError) -> Result<String, ViewerError
     DefaultHtmlShell::new(EmbeddedUiAssets::default()).render_shell(ShellModel {
         app_name: APP_NAME,
         state: &state,
-        resource_policy: ResourcePolicy::LocalOnly,
         theme: Theme::default(),
         body_font: None,
         recent_files: &[],

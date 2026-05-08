@@ -7,15 +7,9 @@ use std::path::PathBuf;
 pub struct ShellModel<'a> {
     pub app_name: &'a str,
     pub state: &'a ViewerState,
-    pub resource_policy: ResourcePolicy,
     pub theme: Theme,
     pub body_font: Option<&'a BodyFontSettings>,
     pub recent_files: &'a [PathBuf],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResourcePolicy {
-    LocalOnly,
 }
 
 pub trait HtmlShell {
@@ -38,10 +32,6 @@ where
     A: UiAssets,
 {
     fn render_shell(&self, model: ShellModel<'_>) -> Result<String, ViewerError> {
-        match model.resource_policy {
-            ResourcePolicy::LocalOnly => {}
-        }
-
         let template = self.assets.read_text_asset(UiTextAsset::IndexHtml)?;
         let styles = self.assets.read_text_asset(UiTextAsset::StylesCss)?;
         let script = self.assets.read_text_asset(UiTextAsset::AppJs)?;
@@ -65,7 +55,7 @@ where
         let toggle_icon_url_dark = self.assets.icon_data_url(IconName::Sun, IconTheme::Dark)?;
         let file_name = current_file_name(model.state, model.recent_files);
         let base_href = current_document_base_href(model.state);
-        let content = content_html(model.state, model.resource_policy);
+        let content = content_html(model.state);
         let error = error_html(model.state);
         let error_overlay = error_overlay_html(model.state);
         let body_font_style = body_font_css(model.body_font);
@@ -261,7 +251,7 @@ fn css_font_family(name: &str) -> String {
     }
 }
 
-fn content_html(state: &ViewerState, resource_policy: ResourcePolicy) -> String {
+fn content_html(state: &ViewerState) -> String {
     if matches!(state, ViewerState::ErrorVisible { .. }) && state.current_document().is_none() {
         return String::new();
     }
@@ -274,9 +264,7 @@ fn content_html(state: &ViewerState, resource_policy: ResourcePolicy) -> String 
     let base_dir = state
         .current_document()
         .map(|document| document.base_dir.as_path());
-    let content = match resource_policy {
-        ResourcePolicy::LocalOnly => sanitize_body_html(content, base_dir),
-    };
+    let content = sanitize_body_html(content, base_dir);
 
     if state.current_document().is_some() {
         format!(
@@ -335,7 +323,7 @@ fn escape_html(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{DefaultHtmlShell, HtmlShell, ResourcePolicy, ShellModel};
+    use super::{DefaultHtmlShell, HtmlShell, ShellModel};
     use crate::ui::{EmbeddedUiAssets, Theme, UiAssets, UiTextAsset};
     use crate::{RenderedDocument, ViewerError, ViewerState, APP_NAME};
     use std::path::PathBuf;
@@ -348,7 +336,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -421,7 +408,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &recent_files,
@@ -447,7 +433,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -487,7 +472,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -518,7 +502,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -549,7 +532,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -577,7 +559,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -612,7 +593,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -641,7 +621,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -670,7 +649,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -695,7 +673,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -720,7 +697,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -749,7 +725,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -782,7 +757,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -816,7 +790,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -850,7 +823,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -880,7 +852,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -910,7 +881,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -931,7 +901,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -989,7 +958,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::Dark,
                 body_font: None,
                 recent_files: &[],
@@ -1011,7 +979,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::Light,
                 body_font: None,
                 recent_files: &[],
@@ -1033,7 +1000,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::Dark,
                 body_font: None,
                 recent_files: &[],
@@ -1051,7 +1017,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::Light,
                 body_font: None,
                 recent_files: &[],
@@ -1069,7 +1034,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1100,7 +1064,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: Some(&body_font),
                 recent_files: &[],
@@ -1133,7 +1096,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: Some(&body_font),
                 recent_files: &[],
@@ -1165,7 +1127,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: Some(&body_font),
                 recent_files: &[],
@@ -1198,7 +1159,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: Some(&body_font),
                 recent_files: &[],
@@ -1220,7 +1180,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1247,7 +1206,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1274,7 +1232,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1296,7 +1253,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1315,7 +1271,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1373,7 +1328,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1402,7 +1356,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1436,7 +1389,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1483,7 +1435,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1513,7 +1464,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1542,7 +1492,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &ViewerState::NoDocument,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1577,7 +1526,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
@@ -1615,7 +1563,6 @@ mod tests {
             .render_shell(ShellModel {
                 app_name: APP_NAME,
                 state: &state,
-                resource_policy: ResourcePolicy::LocalOnly,
                 theme: Theme::default(),
                 body_font: None,
                 recent_files: &[],
