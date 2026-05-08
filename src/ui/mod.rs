@@ -1,11 +1,6 @@
 use crate::ViewerError;
 use std::borrow::Cow;
 
-pub trait UiAssets {
-    fn read_text_asset(&self, asset: UiTextAsset) -> Result<Cow<'static, str>, ViewerError>;
-    fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError>;
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiTextAsset {
     IndexHtml,
@@ -111,8 +106,8 @@ impl Theme {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EmbeddedUiAssets;
 
-impl UiAssets for EmbeddedUiAssets {
-    fn read_text_asset(&self, asset: UiTextAsset) -> Result<Cow<'static, str>, ViewerError> {
+impl EmbeddedUiAssets {
+    pub fn read_text_asset(&self, asset: UiTextAsset) -> Result<Cow<'static, str>, ViewerError> {
         let text = match asset {
             UiTextAsset::IndexHtml => include_str!("index.html"),
             UiTextAsset::StylesCss => include_str!("styles.css"),
@@ -122,7 +117,7 @@ impl UiAssets for EmbeddedUiAssets {
         Ok(Cow::Borrowed(text))
     }
 
-    fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError> {
+    pub fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError> {
         let svg = name.embedded_svg(theme);
         let stripped = svg.replace(" xmlns=\"http://www.w3.org/2000/svg\"", "");
         let encoded = stripped.replace('#', "%23").replace('"', "%22");
@@ -132,7 +127,7 @@ impl UiAssets for EmbeddedUiAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiAssets, UiTextAsset};
+    use super::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiTextAsset};
     use std::fs;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};

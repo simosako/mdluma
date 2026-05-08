@@ -1,6 +1,6 @@
 use crate::html_sanitizer::{file_url_from_path, sanitize_body_html};
 use crate::settings::BodyFontSettings;
-use crate::ui::{IconName, IconTheme, Theme, UiAssets, UiTextAsset};
+use crate::ui::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiTextAsset};
 use crate::{ViewerError, ViewerState};
 use std::path::PathBuf;
 
@@ -17,20 +17,17 @@ pub trait HtmlShell {
 }
 
 #[derive(Debug, Clone)]
-pub struct DefaultHtmlShell<A> {
-    assets: A,
+pub struct DefaultHtmlShell {
+    assets: EmbeddedUiAssets,
 }
 
-impl<A> DefaultHtmlShell<A> {
-    pub fn new(assets: A) -> Self {
+impl DefaultHtmlShell {
+    pub fn new(assets: EmbeddedUiAssets) -> Self {
         Self { assets }
     }
 }
 
-impl<A> HtmlShell for DefaultHtmlShell<A>
-where
-    A: UiAssets,
-{
+impl HtmlShell for DefaultHtmlShell {
     fn render_shell(&self, model: ShellModel<'_>) -> Result<String, ViewerError> {
         let template = self.assets.read_text_asset(UiTextAsset::IndexHtml)?;
         let styles = self.assets.read_text_asset(UiTextAsset::StylesCss)?;
@@ -129,8 +126,8 @@ struct IconUrls {
     dark: String,
 }
 
-fn icon_urls<A: UiAssets>(
-    assets: &A,
+fn icon_urls(
+    assets: &EmbeddedUiAssets,
     name: IconName,
     current_theme: IconTheme,
 ) -> Result<IconUrls, ViewerError> {
@@ -324,7 +321,7 @@ fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{DefaultHtmlShell, HtmlShell, ShellModel};
-    use crate::ui::{EmbeddedUiAssets, Theme, UiAssets, UiTextAsset};
+    use crate::ui::{EmbeddedUiAssets, Theme, UiTextAsset};
     use crate::{RenderedDocument, ViewerError, ViewerState, APP_NAME};
     use std::path::PathBuf;
 

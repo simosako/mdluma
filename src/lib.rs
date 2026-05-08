@@ -38,7 +38,7 @@ pub use platform::{
 };
 pub use sciter::runtime::{RuntimePrerequisites, SciterRuntime, SciterVersion, SCITER_DLL_NAME};
 pub use sciter::window::{SciterWindow, ViewerUi};
-pub use ui::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiAssets, UiTextAsset};
+pub use ui::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiTextAsset};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -52,7 +52,7 @@ type StartupController<U, S = (), E = ()> = app::AppController<
     WindowsFontDialog,
     FileDocumentLoader,
     ComrakMarkdownRenderer,
-    DefaultHtmlShell<EmbeddedUiAssets>,
+    DefaultHtmlShell,
     U,
     S,
     E,
