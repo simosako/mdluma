@@ -45,10 +45,6 @@ where
         let template = self.assets.read_text_asset(UiTextAsset::IndexHtml)?;
         let styles = self.assets.read_text_asset(UiTextAsset::StylesCss)?;
         let script = self.assets.read_text_asset(UiTextAsset::AppJs)?;
-        ensure_local_only(&template)?;
-        ensure_local_only(&styles)?;
-        ensure_local_only(&script)?;
-
         let icon_theme = model.theme.icon_theme();
         let app_icon = icon_urls(&self.assets, IconName::App, icon_theme)?;
         let open_icon = icon_urls(&self.assets, IconName::Open, icon_theme)?;
@@ -322,19 +318,6 @@ fn error_overlay_html(state: &ViewerState) -> String {
     )
 }
 
-fn ensure_local_only(html: &str) -> Result<(), ViewerError> {
-    let lower = html.to_ascii_lowercase();
-    for forbidden in ["http://", "https://", "//cdn", "ftp://"] {
-        if lower.contains(forbidden) {
-            return Err(ViewerError::ui(format!(
-                "HTML shell contains a network resource reference: {forbidden}"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 fn escape_html(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
@@ -353,7 +336,7 @@ fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{DefaultHtmlShell, HtmlShell, ResourcePolicy, ShellModel};
-    use crate::ui::{EmbeddedUiAssets, Theme};
+    use crate::ui::{EmbeddedUiAssets, Theme, UiAssets, UiTextAsset};
     use crate::{RenderedDocument, ViewerError, ViewerState, APP_NAME};
     use std::path::PathBuf;
 
@@ -957,7 +940,7 @@ mod tests {
 
         let lower = html.to_ascii_lowercase();
         let lower = lower.replace("http://sciter.com/", "");
-        for forbidden in ["http://", "https://", "ftp://", "javascript:"] {
+        for forbidden in ["http://", "https://", "ftp://", "//cdn", "javascript:"] {
             assert!(
                 !lower.contains(forbidden),
                 "unexpected remote reference: {forbidden}"
@@ -967,6 +950,35 @@ mod tests {
             lower.contains("data:image/svg+xml"),
             "shell should embed icons as data URLs"
         );
+    }
+
+    #[test]
+    fn embedded_assets_contain_no_network_references() {
+        let assets = EmbeddedUiAssets::default();
+        let template = assets
+            .read_text_asset(UiTextAsset::IndexHtml)
+            .expect("read index.html");
+        let styles = assets
+            .read_text_asset(UiTextAsset::StylesCss)
+            .expect("read styles.css");
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app.js");
+
+        for (name, content) in [
+            ("index.html", template.as_ref()),
+            ("styles.css", styles.as_ref()),
+            ("app.js", script.as_ref()),
+        ] {
+            let lower = content.to_ascii_lowercase();
+            let lower = lower.replace("http://sciter.com/", "");
+            for forbidden in ["http://", "https://", "ftp://", "//cdn"] {
+                assert!(
+                    !lower.contains(forbidden),
+                    "{name}: unexpected remote reference: {forbidden}"
+                );
+            }
+        }
     }
 
     #[test]
