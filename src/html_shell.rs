@@ -65,9 +65,7 @@ where
         let toggle_icon_url_light = self
             .assets
             .icon_data_url(IconName::Moon, IconTheme::Light)?;
-        let toggle_icon_url_dark = self
-            .assets
-            .icon_data_url(IconName::Sun, IconTheme::Dark)?;
+        let toggle_icon_url_dark = self.assets.icon_data_url(IconName::Sun, IconTheme::Dark)?;
         let file_name = current_file_name(model.state, model.recent_files);
         let base_href = current_document_base_href(model.state);
         let content = content_html(model.state, model.resource_policy);
@@ -76,56 +74,63 @@ where
         let body_font_style = body_font_css(model.body_font);
         let external_editor_disabled = external_editor_disabled_attr(model.state);
         let recent_files_html = recent_files_html(model.recent_files);
+        let app_name = escape_html(model.app_name);
+        let current_file_name = escape_html(file_name);
+        let replacements = [
+            ("{{APP_NAME}}", app_name.as_str()),
+            ("{{CURRENT_FILE_NAME}}", current_file_name.as_str()),
+            ("{{BASE_HREF}}", base_href.as_str()),
+            ("{{CONTENT}}", content.as_str()),
+            ("{{ERROR}}", error.as_str()),
+            ("{{STYLES}}", styles.as_str()),
+            ("{{BODY_FONT_STYLE}}", body_font_style.as_str()),
+            ("{{SCRIPT}}", script.as_str()),
+            ("{{APP_ICON}}", app_icon.current.as_str()),
+            ("{{APP_ICON_LIGHT}}", app_icon.light.as_str()),
+            ("{{APP_ICON_DARK}}", app_icon.dark.as_str()),
+            ("{{OPEN_ICON}}", open_icon.current.as_str()),
+            ("{{OPEN_ICON_LIGHT}}", open_icon.light.as_str()),
+            ("{{OPEN_ICON_DARK}}", open_icon.dark.as_str()),
+            ("{{SEARCH_ICON}}", search_icon.current.as_str()),
+            ("{{SEARCH_ICON_LIGHT}}", search_icon.light.as_str()),
+            ("{{SEARCH_ICON_DARK}}", search_icon.dark.as_str()),
+            ("{{SEARCH_PREV_ICON}}", search_prev_icon.current.as_str()),
+            ("{{SEARCH_PREV_ICON_LIGHT}}", search_prev_icon.light.as_str()),
+            ("{{SEARCH_PREV_ICON_DARK}}", search_prev_icon.dark.as_str()),
+            ("{{SEARCH_NEXT_ICON}}", search_next_icon.current.as_str()),
+            ("{{SEARCH_NEXT_ICON_LIGHT}}", search_next_icon.light.as_str()),
+            ("{{SEARCH_NEXT_ICON_DARK}}", search_next_icon.dark.as_str()),
+            ("{{SEARCH_CLOSE_ICON}}", search_close_icon.current.as_str()),
+            ("{{SEARCH_CLOSE_ICON_LIGHT}}", search_close_icon.light.as_str()),
+            ("{{SEARCH_CLOSE_ICON_DARK}}", search_close_icon.dark.as_str()),
+            ("{{MORE_ICON}}", more_icon.current.as_str()),
+            ("{{MORE_ICON_LIGHT}}", more_icon.light.as_str()),
+            ("{{MORE_ICON_DARK}}", more_icon.dark.as_str()),
+            ("{{WINDOW_MINIMIZE_ICON}}", window_minimize_icon.current.as_str()),
+            ("{{WINDOW_MINIMIZE_ICON_LIGHT}}", window_minimize_icon.light.as_str()),
+            ("{{WINDOW_MINIMIZE_ICON_DARK}}", window_minimize_icon.dark.as_str()),
+            ("{{WINDOW_MAXIMIZE_ICON}}", window_maximize_icon.current.as_str()),
+            ("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", window_maximize_icon.light.as_str()),
+            ("{{WINDOW_MAXIMIZE_ICON_DARK}}", window_maximize_icon.dark.as_str()),
+            ("{{WINDOW_CLOSE_ICON}}", window_close_icon.current.as_str()),
+            ("{{WINDOW_CLOSE_ICON_LIGHT}}", window_close_icon.light.as_str()),
+            ("{{WINDOW_CLOSE_ICON_DARK}}", window_close_icon.dark.as_str()),
+            ("{{THEME_ATTR}}", model.theme.theme_attr()),
+            ("{{THEME_ICON}}", toggle_icon_url.as_str()),
+            ("{{THEME_ICON_LIGHT}}", toggle_icon_url_light.as_str()),
+            ("{{THEME_ICON_DARK}}", toggle_icon_url_dark.as_str()),
+            ("{{VERSION}}", env!("CARGO_PKG_VERSION")),
+            ("{{BUILD_NUMBER}}", env!("GIT_COMMIT_HASH")),
+            (
+                "{{SCITER_ATTRIBUTION}}",
+                "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.",
+            ),
+            ("{{EXTERNAL_EDITOR_DISABLED}}", external_editor_disabled),
+            ("{{ERROR_OVERLAY}}", error_overlay.as_str()),
+            ("{{RECENT_FILES}}", recent_files_html.as_str()),
+        ];
 
-        let html = template
-            .replace("{{APP_NAME}}", &escape_html(model.app_name))
-            .replace("{{CURRENT_FILE_NAME}}", &escape_html(file_name))
-            .replace("{{BASE_HREF}}", &base_href)
-            .replace("{{CONTENT}}", &content)
-            .replace("{{ERROR}}", &error)
-            .replace("{{STYLES}}", &styles)
-            .replace("{{BODY_FONT_STYLE}}", &body_font_style)
-            .replace("{{SCRIPT}}", &script)
-            .replace("{{APP_ICON}}", &app_icon.current)
-            .replace("{{APP_ICON_LIGHT}}", &app_icon.light)
-            .replace("{{APP_ICON_DARK}}", &app_icon.dark)
-            .replace("{{OPEN_ICON}}", &open_icon.current)
-            .replace("{{OPEN_ICON_LIGHT}}", &open_icon.light)
-            .replace("{{OPEN_ICON_DARK}}", &open_icon.dark)
-            .replace("{{SEARCH_ICON}}", &search_icon.current)
-            .replace("{{SEARCH_ICON_LIGHT}}", &search_icon.light)
-            .replace("{{SEARCH_ICON_DARK}}", &search_icon.dark)
-            .replace("{{SEARCH_PREV_ICON}}", &search_prev_icon.current)
-            .replace("{{SEARCH_PREV_ICON_LIGHT}}", &search_prev_icon.light)
-            .replace("{{SEARCH_PREV_ICON_DARK}}", &search_prev_icon.dark)
-            .replace("{{SEARCH_NEXT_ICON}}", &search_next_icon.current)
-            .replace("{{SEARCH_NEXT_ICON_LIGHT}}", &search_next_icon.light)
-            .replace("{{SEARCH_NEXT_ICON_DARK}}", &search_next_icon.dark)
-            .replace("{{SEARCH_CLOSE_ICON}}", &search_close_icon.current)
-            .replace("{{SEARCH_CLOSE_ICON_LIGHT}}", &search_close_icon.light)
-            .replace("{{SEARCH_CLOSE_ICON_DARK}}", &search_close_icon.dark)
-            .replace("{{MORE_ICON}}", &more_icon.current)
-            .replace("{{MORE_ICON_LIGHT}}", &more_icon.light)
-            .replace("{{MORE_ICON_DARK}}", &more_icon.dark)
-            .replace("{{WINDOW_MINIMIZE_ICON}}", &window_minimize_icon.current)
-            .replace("{{WINDOW_MINIMIZE_ICON_LIGHT}}", &window_minimize_icon.light)
-            .replace("{{WINDOW_MINIMIZE_ICON_DARK}}", &window_minimize_icon.dark)
-            .replace("{{WINDOW_MAXIMIZE_ICON}}", &window_maximize_icon.current)
-            .replace("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", &window_maximize_icon.light)
-            .replace("{{WINDOW_MAXIMIZE_ICON_DARK}}", &window_maximize_icon.dark)
-            .replace("{{WINDOW_CLOSE_ICON}}", &window_close_icon.current)
-            .replace("{{WINDOW_CLOSE_ICON_LIGHT}}", &window_close_icon.light)
-            .replace("{{WINDOW_CLOSE_ICON_DARK}}", &window_close_icon.dark)
-            .replace("{{THEME_ATTR}}", model.theme.theme_attr())
-            .replace("{{THEME_ICON}}", &toggle_icon_url)
-            .replace("{{THEME_ICON_LIGHT}}", &toggle_icon_url_light)
-            .replace("{{THEME_ICON_DARK}}", &toggle_icon_url_dark)
-            .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
-            .replace("{{BUILD_NUMBER}}", env!("GIT_COMMIT_HASH"))
-            .replace("{{SCITER_ATTRIBUTION}}", "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.")
-            .replace("{{EXTERNAL_EDITOR_DISABLED}}", &external_editor_disabled)
-            .replace("{{ERROR_OVERLAY}}", &error_overlay)
-            .replace("{{RECENT_FILES}}", &recent_files_html);
+        let html = render_template(&template, &replacements);
 
         Ok(html)
     }
@@ -147,6 +152,33 @@ fn icon_urls<A: UiAssets>(
         light: assets.icon_data_url(name, IconTheme::Light)?,
         dark: assets.icon_data_url(name, IconTheme::Dark)?,
     })
+}
+
+fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
+    let mut rendered = String::with_capacity(template.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = template[cursor..].find("{{") {
+        let token_start = cursor + relative_start;
+        rendered.push_str(&template[cursor..token_start]);
+
+        let Some(relative_end) = template[token_start + 2..].find("}}") else {
+            rendered.push_str(&template[token_start..]);
+            return rendered;
+        };
+        let token_end = token_start + 2 + relative_end + 2;
+        let token = &template[token_start..token_end];
+
+        match replacements.iter().find(|(key, _)| *key == token) {
+            Some((_, value)) => rendered.push_str(value),
+            None => rendered.push_str(token),
+        }
+
+        cursor = token_end;
+    }
+
+    rendered.push_str(&template[cursor..]);
+    rendered
 }
 
 fn external_editor_disabled_attr(state: &ViewerState) -> &'static str {
@@ -360,7 +392,9 @@ fn content_html(state: &ViewerState, resource_policy: ResourcePolicy) -> String 
         .map(|document| document.html_body.as_str())
         .unwrap_or("<p class=\"empty-state\">Open Markdown file to start reading.</p>");
 
-    let base_dir = state.current_document().map(|document| document.base_dir.as_path());
+    let base_dir = state
+        .current_document()
+        .map(|document| document.base_dir.as_path());
     let content = match resource_policy {
         ResourcePolicy::LocalOnly => sanitize_body_html(content, base_dir),
     };
@@ -450,7 +484,8 @@ fn sanitize_body_html(html: &str, base_dir: Option<&std::path::Path>) -> String 
                                     cursor = close_end + 1;
                                 }
                                 None => {
-                                    sanitized.push_str(&sanitize_tag(&html[close_start..], base_dir));
+                                    sanitized
+                                        .push_str(&sanitize_tag(&html[close_start..], base_dir));
                                     return sanitized;
                                 }
                             }
