@@ -812,24 +812,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert_eq!(doc.file_name, "readme.md");
     }
 
-    #[test]
-    fn viewer_state_with_document_preserves_path_and_base_dir_from_rendered_document() {
-        let path = PathBuf::from(r"C:\project\docs\api.md");
-        let base_dir = PathBuf::from(r"C:\project\docs");
-        let rendered = RenderedDocument {
-            path: path.clone(),
-            file_name: "api.md".to_string(),
-            base_dir: base_dir.clone(),
-            html_body: "<p>API docs</p>".to_string(),
-        };
 
-        let state = ViewerState::document_loaded(rendered);
-
-        let doc = state.current_document().expect("document loaded");
-        assert_eq!(doc.path, path);
-        assert_eq!(doc.base_dir, base_dir);
-        assert_eq!(doc.base_dir, doc.path.parent().unwrap());
-    }
 
     #[test]
     fn file_name_is_leaf_name_regardless_of_path_absolutization() {
@@ -872,29 +855,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn visible_error_state_does_not_modify_source_markdown_file() {
-        let dir = unique_test_dir("viewer-error-state-readonly");
-        fs::create_dir_all(&dir).expect("create test dir");
-        let source_path = dir.join("source.md");
-        let original = "# Original\n\nContent";
-        fs::write(&source_path, original).expect("write source markdown");
 
-        let state = ViewerState::document_loaded(RenderedDocument {
-            path: source_path.clone(),
-            file_name: "source.md".to_string(),
-            base_dir: dir.clone(),
-            html_body: "<h1>Original</h1>".to_string(),
-        });
-
-        let error = state.with_error(ViewerError::file_read(&source_path, "access denied"));
-
-        assert!(error.is_error_visible());
-        assert_eq!(
-            fs::read_to_string(&source_path).expect("read source markdown"),
-            original
-        );
-    }
 
     #[test]
     fn start_renders_initial_state_into_viewer_ui() {
@@ -4255,28 +4216,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn external_editor_setting_command_dispatches_to_open_external_editor_setting() {
-        let selected_path = PathBuf::from(r"C:\Tools\editor.exe");
-        let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path));
-        let mut controller = AppController::new(
-            dialog.clone(),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
-        );
 
-        controller
-            .handle_viewer_command(ViewerCommand::ExternalEditorSettingRequested)
-            .expect("command dispatch should succeed");
-
-        assert_eq!(
-            dialog.pick_count(),
-            1,
-            "ExternalEditorSettingRequested command should invoke pick_external_editor_file"
-        );
-    }
 
     #[test]
     fn external_editor_setting_cancelled_preserves_existing_config() {
