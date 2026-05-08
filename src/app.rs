@@ -3659,33 +3659,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn open_in_external_editor_launches_exactly_once_per_invocation() {
-        let (editor_launcher, launched) = StubExternalEditorLauncher::new();
-        let doc = rendered_document("once.md");
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc.clone()),
-        )
-        .with_external_editor_config(Some(PathBuf::from(r"C:\Tools\myeditor.exe")));
 
-        controller
-            .open_in_external_editor()
-            .expect("single invocation launch should succeed");
-
-        assert_eq!(
-            launched.borrow().len(),
-            1,
-            "exactly one launch call must be recorded per open_in_external_editor invocation"
-        );
-    }
 
     #[test]
     fn open_in_external_editor_falls_back_to_notepad_when_no_configured_editor() {
@@ -3795,29 +3769,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn open_in_external_editor_propagates_launcher_error() {
-        let (editor_launcher, launched) = StubExternalEditorLauncher::failing();
-        let doc = rendered_document("fail.md");
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(vec![Ok("<html>launch-error</html>".to_string())]),
-            RecordingViewerUi::default(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc),
-        );
 
-        let result = controller.open_in_external_editor();
-        assert!(result.is_err(), "launcher failure must propagate as error");
-        assert!(
-            launched.borrow().len() == 1,
-            "launcher must be called even when it fails"
-        );
-    }
 
     #[test]
     fn open_in_external_editor_command_dispatches_to_launcher_with_configured_editor() {
@@ -3914,84 +3866,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn launch_failure_shows_error_state() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::failing();
-        let doc = rendered_document("err-state.md");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>launch-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc),
-        );
 
-        let result = controller.open_in_external_editor();
-        assert!(result.is_err(), "launch failure must propagate as error");
-        assert!(
-            controller.state().is_error_visible(),
-            "state must be ErrorVisible after launch failure (req 4.1)"
-        );
-    }
-
-    #[test]
-    fn launch_failure_does_not_request_close() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::failing();
-        let doc = rendered_document("no-close.md");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>launch-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc),
-        );
-
-        let result = controller.open_in_external_editor();
-        assert!(result.is_err(), "launch failure must propagate as error");
-        assert!(
-            !ui.close_requested(),
-            "request_close must NOT be called on launch failure (req 4.2)"
-        );
-    }
-
-    #[test]
-    fn launch_failure_preserves_current_document() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::failing();
-        let doc = rendered_document("preserve.md");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>launch-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc.clone()),
-        );
-
-        let result = controller.open_in_external_editor();
-        assert!(result.is_err(), "launch failure must propagate as error");
-        assert_eq!(
-            controller.state().current_document(),
-            Some(&doc),
-            "current document must be accessible after launch failure (req 4.2)"
-        );
-    }
 
     #[test]
     fn open_in_external_editor_launch_failure_shows_error_and_preserves_document() {
@@ -4036,42 +3911,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn open_in_external_editor_launch_failure_continues_browsing() {
-        let (editor_launcher, _launched) = StubExternalEditorLauncher::failing();
-        let doc = rendered_document("browse.md");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>launch-error</html>".to_string())]);
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            RecordingViewerUi::default(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc.clone()),
-        );
 
-        let _ = controller.open_in_external_editor();
-
-        assert!(
-            controller.state().current_document().is_some(),
-            "document count must remain 1 after launch failure (req 5.3)"
-        );
-        assert_eq!(
-            controller
-                .state()
-                .current_document()
-                .map(|d| d.file_name.as_str()),
-            Some("browse.md"),
-            "current document file name must be accessible after launch failure"
-        );
-        assert!(
-            controller.state().is_error_visible(),
-            "must be in error state but document retained"
-        );
-    }
 
     #[test]
     fn open_in_external_editor_close_failure_continues_browsing() {
@@ -4523,7 +4363,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
     }
 
     #[test]
-    fn external_editor_setting_save_failure_shows_error_state() {
+    fn external_editor_setting_save_failure_shows_error_and_preserves_session() {
         let invalid_settings_path = PathBuf::from(r"Z:\nonexistent\mdluma\settings.json");
         let selected_path = PathBuf::from(r"C:\Tools\editor.exe");
         let shell = RecordingHtmlShell::new(vec![Ok("<html>save-error</html>".to_string())]);
@@ -4540,7 +4380,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         let result = controller.open_external_editor_setting();
         assert!(
             result.is_ok(),
-            "open_external_editor_setting should succeed even when save fails (error is shown, session continues)"
+            "open_external_editor_setting should succeed even when save fails"
         );
 
         assert!(
@@ -4552,65 +4392,14 @@ use crate::html_shell::{HtmlShell, ShellModel};
             vec!["<html>save-error</html>".to_string()],
             "error HTML must be rendered to UI on save failure (req 4.3)"
         );
-    }
-
-    #[test]
-    fn external_editor_setting_save_failure_continues_session() {
-        let invalid_settings_path = PathBuf::from(r"Z:\nonexistent\mdluma\settings.json");
-        let selected_path = PathBuf::from(r"C:\Tools\editor.exe");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>save-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path.clone())),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-        )
-        .with_settings_file(SettingsFile::with_path(invalid_settings_path));
-
-        let result = controller.open_external_editor_setting();
-        assert!(
-            result.is_ok(),
-            "session must continue after save failure (req 4.3)"
-        );
-
         assert!(
             !ui.close_requested(),
             "close must NOT be called on save failure (session continues, req 4.3)"
         );
-        assert!(
-            controller.state().is_error_visible(),
-            "controller must remain in ErrorVisible state (session continues, req 4.3)"
-        );
-    }
-
-    #[test]
-    fn external_editor_setting_save_failure_keeps_in_memory_editor_for_session() {
-        let invalid_settings_path = PathBuf::from(r"Z:\nonexistent\mdluma\settings.json");
-        let selected_path = PathBuf::from(r"C:\Tools\editor.exe");
-        let shell = RecordingHtmlShell::new(vec![Ok("<html>save-error</html>".to_string())]);
-        let ui = RecordingViewerUi::default();
-        let mut controller = AppController::new(
-            StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path.clone())),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            shell,
-            ui.clone(),
-        )
-        .with_settings_file(SettingsFile::with_path(invalid_settings_path));
-
-        let result = controller.open_external_editor_setting();
-        assert!(result.is_ok());
-
         assert_eq!(
             controller.external_editor(),
             &Some(selected_path),
-            "external_editor must be set in memory even when save fails (current session reflect user choice)"
-        );
-        assert!(
-            controller.state().is_error_visible(),
-            "state must be ErrorVisible due to save failure"
+            "external_editor must be set in memory even when save fails"
         );
     }
 
@@ -4805,101 +4594,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
         );
     }
 
-    #[test]
-    fn save_then_restart_loads_saved_external_editor() {
-        let dir = unique_test_dir("ext-editor-save-restart-load");
-        fs::create_dir_all(dir.as_ref()).expect("create test dir");
-        let settings_path = dir.join("settings.json");
-        let selected_path = PathBuf::from(r"C:\Tools\code.exe");
 
-        let mut controller_a = AppController::new(
-            StubFileDialog::with_editor_pick(OpenFileResult::Selected(selected_path.clone())),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
-        )
-        .with_settings_file(SettingsFile::with_path(settings_path.clone()));
-
-        controller_a
-            .open_external_editor_setting()
-            .expect("save should succeed");
-        assert_eq!(controller_a.external_editor(), &Some(selected_path.clone()));
-
-        let saved = SettingsFile::with_path(settings_path.clone()).load();
-        assert_eq!(
-            saved.external_editor,
-            Some(selected_path.clone()),
-            "external_editor must be persisted to settings file"
-        );
-
-        let controller_b = AppController::new(
-            StubFileDialog::cancelled(),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
-        )
-        .with_settings_file(SettingsFile::with_path(settings_path));
-
-        assert_eq!(
-            controller_b.external_editor(),
-            &Some(selected_path),
-            "restarted controller must load saved external_editor from settings file"
-        );
-    }
-
-    #[test]
-    fn restart_with_saved_external_editor_uses_it_for_launch() {
-        let dir = unique_test_dir("ext-editor-save-restart-launch");
-        fs::create_dir_all(dir.as_ref()).expect("create test dir");
-        let settings_path = dir.join("settings.json");
-        let editor_path = PathBuf::from(r"C:\Tools\vscode.exe");
-
-        SettingsFile::with_path(settings_path.clone())
-            .save(&Settings {
-                theme: ThemePreference::Light,
-                body_font: None,
-                external_editor: Some(editor_path.clone()),
-                recent_files: vec![],
-                window_geometry: None,
-                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
-            })
-            .expect("save settings");
-
-        let (editor_launcher, launched) = StubExternalEditorLauncher::new();
-        let doc = rendered_document("readme.md");
-        let mut controller = AppController::with_external_editor_launcher_and_state(
-            StubFileDialog::cancelled(),
-            (),
-            StubDocumentLoader::new(Vec::new()),
-            StubMarkdownRenderer::new(Vec::new()),
-            RecordingHtmlShell::new(Vec::new()),
-            RecordingViewerUi::default(),
-            (),
-            editor_launcher,
-            ViewerState::document_loaded(doc.clone()),
-        )
-        .with_settings_file(SettingsFile::with_path(settings_path));
-
-        assert_eq!(
-            controller.external_editor(),
-            &Some(editor_path.clone()),
-            "external_editor must be loaded from settings on restart"
-        );
-
-        controller
-            .open_in_external_editor()
-            .expect("launch should succeed");
-
-        let records = launched.borrow();
-        assert_eq!(records.len(), 1);
-        assert_eq!(
-            records[0].0, editor_path,
-            "must use editor executable loaded from settings"
-        );
-        assert_eq!(records[0].1, doc.path, "must pass current document path");
-    }
 
     #[test]
     fn with_settings_file_reloads_external_editor() {
