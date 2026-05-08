@@ -1,7 +1,8 @@
 use crate::ViewerError;
+use std::borrow::Cow;
 
 pub trait UiAssets {
-    fn read_text_asset(&self, asset: UiTextAsset) -> Result<String, ViewerError>;
+    fn read_text_asset(&self, asset: UiTextAsset) -> Result<Cow<'static, str>, ViewerError>;
     fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError>;
 }
 
@@ -111,14 +112,14 @@ impl Theme {
 pub struct EmbeddedUiAssets;
 
 impl UiAssets for EmbeddedUiAssets {
-    fn read_text_asset(&self, asset: UiTextAsset) -> Result<String, ViewerError> {
+    fn read_text_asset(&self, asset: UiTextAsset) -> Result<Cow<'static, str>, ViewerError> {
         let text = match asset {
             UiTextAsset::IndexHtml => include_str!("index.html"),
             UiTextAsset::StylesCss => include_str!("styles.css"),
             UiTextAsset::AppJs => include_str!("app.js"),
         };
 
-        Ok(text.to_string())
+        Ok(Cow::Borrowed(text))
     }
 
     fn icon_data_url(&self, name: IconName, theme: IconTheme) -> Result<String, ViewerError> {
