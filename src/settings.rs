@@ -6,6 +6,10 @@ use crate::errors::ViewerError;
 use crate::ui::Theme;
 use crate::APP_NAME;
 
+pub const DEFAULT_CONTENT_MAX_WIDTH_PX: u16 = 1040;
+const MIN_CONTENT_MAX_WIDTH_PX: u16 = 640;
+const MAX_CONTENT_MAX_WIDTH_PX: u16 = 2400;
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemePreference {
@@ -78,6 +82,40 @@ where
     Ok(opt.filter(is_valid_window_geometry))
 }
 
+fn default_content_max_width_px() -> u16 {
+    DEFAULT_CONTENT_MAX_WIDTH_PX
+}
+
+fn normalize_content_max_width_px(px: u16) -> u16 {
+    if (MIN_CONTENT_MAX_WIDTH_PX..=MAX_CONTENT_MAX_WIDTH_PX).contains(&px) {
+        px
+    } else {
+        DEFAULT_CONTENT_MAX_WIDTH_PX
+    }
+}
+
+fn is_default_content_max_width_px(px: &u16) -> bool {
+    *px == DEFAULT_CONTENT_MAX_WIDTH_PX
+}
+
+fn deserialize_content_max_width_px<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let px = match value {
+        serde_json::Value::Number(number) => number
+            .as_u64()
+            .and_then(|v| u16::try_from(v).ok())
+            .or_else(|| number.as_i64().and_then(|v| u16::try_from(v).ok())),
+        _ => None,
+    };
+
+    Ok(px
+        .map(normalize_content_max_width_px)
+        .unwrap_or(DEFAULT_CONTENT_MAX_WIDTH_PX))
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(default)]
 pub struct Settings {
@@ -98,6 +136,12 @@ pub struct Settings {
         skip_serializing_if = "Option::is_none"
     )]
     pub window_geometry: Option<WindowGeometry>,
+    #[serde(
+        default = "default_content_max_width_px",
+        deserialize_with = "deserialize_content_max_width_px",
+        skip_serializing_if = "is_default_content_max_width_px"
+    )]
+    pub content_max_width_px: u16,
 }
 
 impl Default for Settings {
@@ -108,6 +152,7 @@ impl Default for Settings {
             external_editor: None,
             recent_files: Vec::new(),
             window_geometry: None,
+            content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
         }
     }
 }
@@ -216,7 +261,10 @@ fn settings_file_path(local_app_data: Option<PathBuf>, temp_dir: PathBuf) -> Pat
 
 #[cfg(test)]
 mod tests {
-    use super::{settings_file_path, BodyFontSettings, Settings, SettingsFile, ThemePreference};
+    use super::{
+        settings_file_path, BodyFontSettings, Settings, SettingsFile, ThemePreference,
+        DEFAULT_CONTENT_MAX_WIDTH_PX,
+    };
     use crate::errors::ViewerError;
     use crate::ui::Theme;
     use crate::APP_NAME;
@@ -260,6 +308,11 @@ mod tests {
     #[test]
     fn settings_default_theme_is_light() {
         assert_eq!(Settings::default().theme, ThemePreference::Light);
+    }
+
+    #[test]
+    fn settings_default_content_max_width_px_is_1040() {
+        assert_eq!(Settings::default().content_max_width_px, 1040);
     }
 
     #[test]
@@ -321,6 +374,7 @@ mod tests {
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save settings");
 
@@ -422,6 +476,39 @@ mod tests {
             serde_json::from_str(json).expect("parse settings without body_font");
         assert_eq!(settings.theme, ThemePreference::Light);
         assert_eq!(settings.body_font, None);
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_deserializes_content_max_width_px_when_present() {
+        let json = r#"{"theme":"light","content_max_width_px":980}"#;
+        let settings: Settings = serde_json::from_str(json).expect("parse settings with width");
+        assert_eq!(settings.content_max_width_px, 980);
+    }
+
+    #[test]
+    fn settings_normalizes_out_of_range_content_max_width_px_to_default() {
+        let json = r#"{"theme":"light","content_max_width_px":320}"#;
+        let settings: Settings =
+            serde_json::from_str(json).expect("parse settings with invalid width");
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_invalid_content_max_width_px_does_not_drop_other_fields() {
+        let json = r#"{"theme":"dark","content_max_width_px":-10}"#;
+        let settings: Settings =
+            serde_json::from_str(json).expect("parse settings with negative width");
+        assert_eq!(settings.theme, ThemePreference::Dark);
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_non_integer_content_max_width_px_falls_back_to_default() {
+        let json = r#"{"theme":"light","content_max_width_px":980.5}"#;
+        let settings: Settings =
+            serde_json::from_str(json).expect("parse settings with floating width");
+        assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
     }
 
     #[test]
@@ -462,6 +549,7 @@ mod tests {
             external_editor: None,
             recent_files: vec![],
             window_geometry: None,
+            content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -486,6 +574,7 @@ mod tests {
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save settings");
 
@@ -565,6 +654,7 @@ mod tests {
             external_editor: Some(PathBuf::from(r"C:\Tools\vscode\Code.exe")),
             recent_files: vec![],
             window_geometry: None,
+            content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -587,6 +677,7 @@ mod tests {
             external_editor: Some(PathBuf::from(r"C:\Tools\notepadpp\notepad++.exe")),
             recent_files: vec![],
             window_geometry: None,
+            content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
         };
         settings_file.save(&save_settings).expect("save settings");
 

@@ -8,7 +8,10 @@ use crate::markdown::MarkdownRenderer;
 use crate::open_paths::plan_drop_open;
 use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
 use crate::sciter::window::{ViewerCommand, ViewerCommandBinder, ViewerCommandHandler, ViewerUi};
-use crate::settings::{BodyFontSettings, Settings, SettingsFile, ThemePreference, WindowGeometry};
+use crate::settings::{
+    BodyFontSettings, Settings, SettingsFile, ThemePreference, WindowGeometry,
+    DEFAULT_CONTENT_MAX_WIDTH_PX,
+};
 use crate::ui::Theme;
 use crate::viewer_launcher::ViewerChildLauncher;
 use std::path::{Path, PathBuf};
@@ -26,6 +29,7 @@ struct LoadedSettings {
     recent_files: Vec<PathBuf>,
     settings_file: SettingsFile,
     window_geometry: Option<WindowGeometry>,
+    content_max_width_px: u16,
 }
 
 impl LoadedSettings {
@@ -38,6 +42,7 @@ impl LoadedSettings {
             recent_files: settings.recent_files,
             settings_file,
             window_geometry: settings.window_geometry,
+            content_max_width_px: settings.content_max_width_px,
         }
     }
 }
@@ -65,6 +70,7 @@ pub struct AppController<D, F, L, R, H, U, S = (), E = ()> {
     recent_files: Vec<PathBuf>,
     settings_file: SettingsFile,
     window_geometry: Option<WindowGeometry>,
+    content_max_width_px: u16,
 }
 
 #[cfg(test)]
@@ -94,6 +100,7 @@ where
             recent_files: s.recent_files,
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
+            content_max_width_px: s.content_max_width_px,
         }
     }
 
@@ -122,6 +129,7 @@ where
             recent_files: s.recent_files,
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
+            content_max_width_px: s.content_max_width_px,
         }
     }
 }
@@ -156,6 +164,7 @@ where
         self.external_editor = s.external_editor;
         self.recent_files = s.recent_files;
         self.window_geometry = s.window_geometry;
+        self.content_max_width_px = s.content_max_width_px;
         self.settings_file = s.settings_file;
         self
     }
@@ -167,6 +176,7 @@ where
             external_editor: self.external_editor.clone(),
             recent_files: self.recent_files.clone(),
             window_geometry: self.window_geometry.clone(),
+            content_max_width_px: self.content_max_width_px,
         }
     }
 
@@ -372,13 +382,28 @@ where
     }
 
     fn render_state_html(&self, state: &ViewerState) -> Result<String, ViewerError> {
-        self.shell.render_shell(ShellModel {
+        let mut html = self.shell.render_shell(ShellModel {
             app_name: APP_NAME,
             state,
             theme: self.theme,
             body_font: self.body_font.as_ref(),
             recent_files: &self.recent_files,
-        })
+        })?;
+
+        if self.content_max_width_px != DEFAULT_CONTENT_MAX_WIDTH_PX {
+            let replacement = format!("max-width: {}px;", self.content_max_width_px);
+            let default_max_width = format!("max-width: {}px;", DEFAULT_CONTENT_MAX_WIDTH_PX);
+            let replaced = html.replacen(&default_max_width, &replacement, 1);
+            if replaced == html {
+                crate::debug_log!(
+                    "content max width override marker not found: expected '{default_max_width}'"
+                );
+            } else {
+                html = replaced;
+            }
+        }
+
+        Ok(html)
     }
 
     fn show_error_state(&mut self, error: ViewerError) -> Result<(), ViewerError> {
@@ -456,6 +481,7 @@ where
             recent_files: s.recent_files,
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
+            content_max_width_px: s.content_max_width_px,
         }
     }
 
@@ -500,6 +526,7 @@ where
             recent_files: s.recent_files,
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
+            content_max_width_px: s.content_max_width_px,
         }
     }
 
@@ -640,7 +667,9 @@ use crate::html_shell::{HtmlShell, ShellModel};
     use crate::markdown::MarkdownRenderer;
     use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
     use crate::sciter::window::{ViewerCommand, ViewerUi};
-    use crate::settings::{BodyFontSettings, Settings, SettingsFile, ThemePreference};
+    use crate::settings::{
+        BodyFontSettings, Settings, SettingsFile, ThemePreference, DEFAULT_CONTENT_MAX_WIDTH_PX,
+    };
     use crate::{RenderedDocument, Theme, ViewerState, APP_NAME};
     use std::cell::RefCell;
     use std::fs;
@@ -2354,6 +2383,47 @@ use crate::html_shell::{HtmlShell, ShellModel};
     }
 
     #[test]
+    fn start_applies_content_max_width_px_from_settings_file() {
+        let dir = unique_test_dir("content-width-start-restore");
+        fs::create_dir_all(dir.as_ref()).expect("create test dir");
+        let settings_path = dir.join("settings.json");
+        SettingsFile::with_path(settings_path)
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: None,
+                external_editor: None,
+                recent_files: vec![],
+                window_geometry: None,
+                content_max_width_px: 980,
+            })
+            .expect("save test settings");
+
+        let shell =
+            crate::html_shell::DefaultHtmlShell::new(crate::ui::EmbeddedUiAssets::default());
+        let ui = RecordingViewerUi::default();
+        let mut controller = AppController::new(
+            StubFileDialog::cancelled(),
+            StubDocumentLoader::new(Vec::new()),
+            StubMarkdownRenderer::new(Vec::new()),
+            shell,
+            ui.clone(),
+        )
+        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
+
+        controller.start().expect("start should succeed");
+
+        let initial_html = ui.initial_html().into_iter().next().expect("initial html");
+        assert!(
+            initial_html.contains("max-width: 980px;"),
+            "saved content_max_width_px should override default max-width"
+        );
+        assert!(
+            !initial_html.contains("max-width: 1040px;"),
+            "default max-width should be replaced when setting is present"
+        );
+    }
+
+    #[test]
     fn theme_toggle_saves_updated_theme_to_settings_file() {
         let dir = unique_test_dir("theme-toggle-save-settings");
         fs::create_dir_all(dir.as_ref()).expect("create test dir");
@@ -2712,6 +2782,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save test settings");
 
@@ -2780,6 +2851,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save test settings");
 
@@ -2828,6 +2900,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save test settings");
 
@@ -2867,6 +2940,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: None,
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save test settings");
 
@@ -4377,6 +4451,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: Some(existing_path.clone()),
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save test settings");
 
@@ -4788,6 +4863,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: Some(editor_path.clone()),
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save settings");
 
@@ -4839,6 +4915,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: Some(saved_path.clone()),
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save settings");
 
@@ -4922,6 +4999,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 external_editor: Some(existing_path.clone()),
                 recent_files: vec![],
                 window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
             })
             .expect("save initial settings");
         let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Cancelled);
