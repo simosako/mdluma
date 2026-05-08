@@ -258,7 +258,7 @@ mod tests {
             },
             {
                 let ui = ui.clone();
-                move |distribution_dir, runtime| {
+                move |_distribution_dir, runtime| {
                     build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
                 }
             },
@@ -340,7 +340,7 @@ mod tests {
 
         start_viewer_with(None, distribution_dir.clone(), |_| Ok(fake_runtime()), {
             let ui = ui.clone();
-            move |distribution_dir, runtime| {
+            move |_distribution_dir, runtime| {
                 build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
             }
         })
@@ -444,7 +444,7 @@ mod tests {
 
         start_viewer_with(None, distribution_dir.clone(), |_| Ok(fake_runtime()), {
             let ui = ui.clone();
-            move |distribution_dir, runtime| {
+            move |_distribution_dir, runtime| {
                 build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
             }
         })
@@ -487,7 +487,7 @@ mod tests {
             |_| Ok(fake_runtime()),
             {
                 let ui = ui.clone();
-                move |distribution_dir, runtime| {
+                move |_distribution_dir, runtime| {
                     build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
                         .map(|c| {
                             c.with_settings_file(SettingsFile::with_path(
@@ -974,7 +974,7 @@ mod tests {
 
         let (ee_launcher, ee_records) = RecordingExternalEditorLauncher::new();
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
-        let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
+        let _distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
 
         let mut controller = build_startup_controller(
             fake_runtime(),
@@ -1009,7 +1009,7 @@ mod tests {
 
     #[test]
     fn startup_wiring_preserves_normal_viewer_startup_without_external_editor() {
-        let distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
+        let _distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
 
         let controller =

@@ -3253,9 +3253,6 @@ use crate::html_shell::{HtmlShell, ShellModel};
             self.inner.borrow_mut().native_window_handle = handle;
         }
 
-        fn apply_theme_calls(&self) -> Vec<Theme> {
-            self.inner.borrow().apply_theme_calls.clone()
-        }
 
         fn apply_body_font_calls(&self) -> Vec<Option<crate::settings::BodyFontSettings>> {
             self.inner.borrow().apply_body_font_calls.clone()
@@ -3726,9 +3723,6 @@ use crate::html_shell::{HtmlShell, ShellModel};
             "launcher must still be called once"
         );
     }
-
-    #[test]
-
 
     #[test]
     fn open_in_external_editor_command_is_noop_when_no_document() {
