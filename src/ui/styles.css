@@ -352,6 +352,8 @@ button:disabled {
 .content {
   display: block;
   width: *;
+  max-width: 1040px;
+  margin: 0 auto;
   box-sizing: border-box;
   padding: 28px 32px 48px;
   line-height: 1.65;
