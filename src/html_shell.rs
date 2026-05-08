@@ -49,72 +49,16 @@ where
         ensure_local_only(&script)?;
 
         let icon_theme = model.theme.icon_theme();
-        let app_icon = self.assets.icon_data_url(IconName::App, icon_theme)?;
-        let app_icon_light = self.assets.icon_data_url(IconName::App, IconTheme::Light)?;
-        let app_icon_dark = self.assets.icon_data_url(IconName::App, IconTheme::Dark)?;
-        let open_icon = self.assets.icon_data_url(IconName::Open, icon_theme)?;
-        let open_icon_light = self.assets.icon_data_url(IconName::Open, IconTheme::Light)?;
-        let open_icon_dark = self.assets.icon_data_url(IconName::Open, IconTheme::Dark)?;
-        let search_icon = self.assets.icon_data_url(IconName::Search, icon_theme)?;
-        let search_icon_light = self.assets.icon_data_url(IconName::Search, IconTheme::Light)?;
-        let search_icon_dark = self.assets.icon_data_url(IconName::Search, IconTheme::Dark)?;
-        let search_prev_icon = self
-            .assets
-            .icon_data_url(IconName::SearchPrev, icon_theme)?;
-        let search_prev_icon_light = self
-            .assets
-            .icon_data_url(IconName::SearchPrev, IconTheme::Light)?;
-        let search_prev_icon_dark = self
-            .assets
-            .icon_data_url(IconName::SearchPrev, IconTheme::Dark)?;
-        let search_next_icon = self
-            .assets
-            .icon_data_url(IconName::SearchNext, icon_theme)?;
-        let search_next_icon_light = self
-            .assets
-            .icon_data_url(IconName::SearchNext, IconTheme::Light)?;
-        let search_next_icon_dark = self
-            .assets
-            .icon_data_url(IconName::SearchNext, IconTheme::Dark)?;
-        let search_close_icon = self
-            .assets
-            .icon_data_url(IconName::SearchClose, icon_theme)?;
-        let search_close_icon_light = self
-            .assets
-            .icon_data_url(IconName::SearchClose, IconTheme::Light)?;
-        let search_close_icon_dark = self
-            .assets
-            .icon_data_url(IconName::SearchClose, IconTheme::Dark)?;
-        let more_icon = self.assets.icon_data_url(IconName::More, icon_theme)?;
-        let more_icon_light = self.assets.icon_data_url(IconName::More, IconTheme::Light)?;
-        let more_icon_dark = self.assets.icon_data_url(IconName::More, IconTheme::Dark)?;
-        let window_minimize_icon = self
-            .assets
-            .icon_data_url(IconName::WindowMinimize, icon_theme)?;
-        let window_minimize_icon_light = self
-            .assets
-            .icon_data_url(IconName::WindowMinimize, IconTheme::Light)?;
-        let window_minimize_icon_dark = self
-            .assets
-            .icon_data_url(IconName::WindowMinimize, IconTheme::Dark)?;
-        let window_maximize_icon = self
-            .assets
-            .icon_data_url(IconName::WindowMaximize, icon_theme)?;
-        let window_maximize_icon_light = self
-            .assets
-            .icon_data_url(IconName::WindowMaximize, IconTheme::Light)?;
-        let window_maximize_icon_dark = self
-            .assets
-            .icon_data_url(IconName::WindowMaximize, IconTheme::Dark)?;
-        let window_close_icon = self
-            .assets
-            .icon_data_url(IconName::WindowClose, icon_theme)?;
-        let window_close_icon_light = self
-            .assets
-            .icon_data_url(IconName::WindowClose, IconTheme::Light)?;
-        let window_close_icon_dark = self
-            .assets
-            .icon_data_url(IconName::WindowClose, IconTheme::Dark)?;
+        let app_icon = icon_urls(&self.assets, IconName::App, icon_theme)?;
+        let open_icon = icon_urls(&self.assets, IconName::Open, icon_theme)?;
+        let search_icon = icon_urls(&self.assets, IconName::Search, icon_theme)?;
+        let search_prev_icon = icon_urls(&self.assets, IconName::SearchPrev, icon_theme)?;
+        let search_next_icon = icon_urls(&self.assets, IconName::SearchNext, icon_theme)?;
+        let search_close_icon = icon_urls(&self.assets, IconName::SearchClose, icon_theme)?;
+        let more_icon = icon_urls(&self.assets, IconName::More, icon_theme)?;
+        let window_minimize_icon = icon_urls(&self.assets, IconName::WindowMinimize, icon_theme)?;
+        let window_maximize_icon = icon_urls(&self.assets, IconName::WindowMaximize, icon_theme)?;
+        let window_close_icon = icon_urls(&self.assets, IconName::WindowClose, icon_theme)?;
         let toggle_icon_url = self
             .assets
             .icon_data_url(model.theme.toggle_icon(), icon_theme)?;
@@ -142,36 +86,36 @@ where
             .replace("{{STYLES}}", &styles)
             .replace("{{BODY_FONT_STYLE}}", &body_font_style)
             .replace("{{SCRIPT}}", &script)
-            .replace("{{APP_ICON}}", &app_icon)
-            .replace("{{APP_ICON_LIGHT}}", &app_icon_light)
-            .replace("{{APP_ICON_DARK}}", &app_icon_dark)
-            .replace("{{OPEN_ICON}}", &open_icon)
-            .replace("{{OPEN_ICON_LIGHT}}", &open_icon_light)
-            .replace("{{OPEN_ICON_DARK}}", &open_icon_dark)
-            .replace("{{SEARCH_ICON}}", &search_icon)
-            .replace("{{SEARCH_ICON_LIGHT}}", &search_icon_light)
-            .replace("{{SEARCH_ICON_DARK}}", &search_icon_dark)
-            .replace("{{SEARCH_PREV_ICON}}", &search_prev_icon)
-            .replace("{{SEARCH_PREV_ICON_LIGHT}}", &search_prev_icon_light)
-            .replace("{{SEARCH_PREV_ICON_DARK}}", &search_prev_icon_dark)
-            .replace("{{SEARCH_NEXT_ICON}}", &search_next_icon)
-            .replace("{{SEARCH_NEXT_ICON_LIGHT}}", &search_next_icon_light)
-            .replace("{{SEARCH_NEXT_ICON_DARK}}", &search_next_icon_dark)
-            .replace("{{SEARCH_CLOSE_ICON}}", &search_close_icon)
-            .replace("{{SEARCH_CLOSE_ICON_LIGHT}}", &search_close_icon_light)
-            .replace("{{SEARCH_CLOSE_ICON_DARK}}", &search_close_icon_dark)
-            .replace("{{MORE_ICON}}", &more_icon)
-            .replace("{{MORE_ICON_LIGHT}}", &more_icon_light)
-            .replace("{{MORE_ICON_DARK}}", &more_icon_dark)
-            .replace("{{WINDOW_MINIMIZE_ICON}}", &window_minimize_icon)
-            .replace("{{WINDOW_MINIMIZE_ICON_LIGHT}}", &window_minimize_icon_light)
-            .replace("{{WINDOW_MINIMIZE_ICON_DARK}}", &window_minimize_icon_dark)
-            .replace("{{WINDOW_MAXIMIZE_ICON}}", &window_maximize_icon)
-            .replace("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", &window_maximize_icon_light)
-            .replace("{{WINDOW_MAXIMIZE_ICON_DARK}}", &window_maximize_icon_dark)
-            .replace("{{WINDOW_CLOSE_ICON}}", &window_close_icon)
-            .replace("{{WINDOW_CLOSE_ICON_LIGHT}}", &window_close_icon_light)
-            .replace("{{WINDOW_CLOSE_ICON_DARK}}", &window_close_icon_dark)
+            .replace("{{APP_ICON}}", &app_icon.current)
+            .replace("{{APP_ICON_LIGHT}}", &app_icon.light)
+            .replace("{{APP_ICON_DARK}}", &app_icon.dark)
+            .replace("{{OPEN_ICON}}", &open_icon.current)
+            .replace("{{OPEN_ICON_LIGHT}}", &open_icon.light)
+            .replace("{{OPEN_ICON_DARK}}", &open_icon.dark)
+            .replace("{{SEARCH_ICON}}", &search_icon.current)
+            .replace("{{SEARCH_ICON_LIGHT}}", &search_icon.light)
+            .replace("{{SEARCH_ICON_DARK}}", &search_icon.dark)
+            .replace("{{SEARCH_PREV_ICON}}", &search_prev_icon.current)
+            .replace("{{SEARCH_PREV_ICON_LIGHT}}", &search_prev_icon.light)
+            .replace("{{SEARCH_PREV_ICON_DARK}}", &search_prev_icon.dark)
+            .replace("{{SEARCH_NEXT_ICON}}", &search_next_icon.current)
+            .replace("{{SEARCH_NEXT_ICON_LIGHT}}", &search_next_icon.light)
+            .replace("{{SEARCH_NEXT_ICON_DARK}}", &search_next_icon.dark)
+            .replace("{{SEARCH_CLOSE_ICON}}", &search_close_icon.current)
+            .replace("{{SEARCH_CLOSE_ICON_LIGHT}}", &search_close_icon.light)
+            .replace("{{SEARCH_CLOSE_ICON_DARK}}", &search_close_icon.dark)
+            .replace("{{MORE_ICON}}", &more_icon.current)
+            .replace("{{MORE_ICON_LIGHT}}", &more_icon.light)
+            .replace("{{MORE_ICON_DARK}}", &more_icon.dark)
+            .replace("{{WINDOW_MINIMIZE_ICON}}", &window_minimize_icon.current)
+            .replace("{{WINDOW_MINIMIZE_ICON_LIGHT}}", &window_minimize_icon.light)
+            .replace("{{WINDOW_MINIMIZE_ICON_DARK}}", &window_minimize_icon.dark)
+            .replace("{{WINDOW_MAXIMIZE_ICON}}", &window_maximize_icon.current)
+            .replace("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", &window_maximize_icon.light)
+            .replace("{{WINDOW_MAXIMIZE_ICON_DARK}}", &window_maximize_icon.dark)
+            .replace("{{WINDOW_CLOSE_ICON}}", &window_close_icon.current)
+            .replace("{{WINDOW_CLOSE_ICON_LIGHT}}", &window_close_icon.light)
+            .replace("{{WINDOW_CLOSE_ICON_DARK}}", &window_close_icon.dark)
             .replace("{{THEME_ATTR}}", model.theme.theme_attr())
             .replace("{{THEME_ICON}}", &toggle_icon_url)
             .replace("{{THEME_ICON_LIGHT}}", &toggle_icon_url_light)
@@ -185,6 +129,24 @@ where
 
         Ok(html)
     }
+}
+
+struct IconUrls {
+    current: String,
+    light: String,
+    dark: String,
+}
+
+fn icon_urls<A: UiAssets>(
+    assets: &A,
+    name: IconName,
+    current_theme: IconTheme,
+) -> Result<IconUrls, ViewerError> {
+    Ok(IconUrls {
+        current: assets.icon_data_url(name, current_theme)?,
+        light: assets.icon_data_url(name, IconTheme::Light)?,
+        dark: assets.icon_data_url(name, IconTheme::Dark)?,
+    })
 }
 
 fn external_editor_disabled_attr(state: &ViewerState) -> &'static str {
