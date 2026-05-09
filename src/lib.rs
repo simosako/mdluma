@@ -131,10 +131,21 @@ where
         LaunchAction::SpawnChildren { file_paths } => {
             const CASCADE_STEP: i32 = 30;
             const MAX_OFFSET: i32 = 200;
+            const BASE_LEFT: i32 = 100;
+            const BASE_TOP: i32 = 100;
             for (index, file_path) in file_paths.into_iter().enumerate() {
-                let offset = (index as i32 * CASCADE_STEP).min(MAX_OFFSET);
+                let abs_left = if index == 0 {
+                    0
+                } else {
+                    BASE_LEFT + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
+                };
+                let abs_top = if index == 0 {
+                    0
+                } else {
+                    BASE_TOP + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
+                };
                 launcher
-                    .launch_path(&file_path, offset, offset)
+                    .launch_path(&file_path, abs_left, abs_top)
                     .map_err(StartupError::from_viewer_error)?;
             }
             Ok(())

@@ -462,27 +462,42 @@ impl SciterApi {
         saved_geometry: Option<&crate::settings::WindowGeometry>,
     ) -> Result<SciterWindowHandle, SciterRuntimeError> {
         let (cascade_left, cascade_top) = read_window_cascade_offset();
-        let mut frame = if let Some(geo) = saved_geometry {
+        let has_cascade = cascade_left != 0 || cascade_top != 0;
+        let default_width: i32 = 1080;
+        let default_height: i32 = 720;
+        let mut frame = if has_cascade {
+            let (w, h) = saved_geometry.map_or((default_width, default_height), |geo| {
+                (geo.right - geo.left, geo.bottom - geo.top)
+            });
             SciterRect {
-                left: geo.left + cascade_left,
-                top: geo.top + cascade_top,
-                right: geo.right + cascade_left,
-                bottom: geo.bottom + cascade_top,
+                left: cascade_left,
+                top: cascade_top,
+                right: cascade_left + w,
+                bottom: cascade_top + h,
+            }
+        } else if let Some(geo) = saved_geometry {
+            SciterRect {
+                left: geo.left,
+                top: geo.top,
+                right: geo.right,
+                bottom: geo.bottom,
             }
         } else {
             SciterRect {
-                left: 100 + cascade_left,
-                top: 100 + cascade_top,
-                right: 1180 + cascade_left,
-                bottom: 820 + cascade_top,
+                left: 100,
+                top: 100,
+                right: 100 + default_width,
+                bottom: 100 + default_height,
             }
         };
         if !is_on_screen_rect(&frame) {
+            let fallback_left = if has_cascade { cascade_left } else { 100 };
+            let fallback_top = if has_cascade { cascade_top } else { 100 };
             frame = SciterRect {
-                left: 100 + cascade_left,
-                top: 100 + cascade_top,
-                right: 1180 + cascade_left,
-                bottom: 820 + cascade_top,
+                left: fallback_left,
+                top: fallback_top,
+                right: fallback_left + default_width,
+                bottom: fallback_top + default_height,
             };
         }
         let creation_flags = viewer_window_creation_flags();
