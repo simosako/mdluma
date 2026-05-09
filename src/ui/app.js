@@ -1,3 +1,65 @@
+function toggleWindowMaximize() {
+  if (typeof Window === "undefined" || !Window.this) return;
+
+  var maximized = false;
+  try {
+    maximized = Window.this.state === 4 || Window.this.state === Window.WINDOW_MAXIMIZED;
+  } catch (_e) {}
+
+  if (maximized) {
+    Window.this.state = Window.WINDOW_SHOWN;
+  } else {
+    Window.this.state = Window.WINDOW_MAXIMIZED;
+  }
+
+  updateMaximizeButtonIcon();
+}
+
+function updateMaximizeButtonIcon() {
+  var img = document.querySelector('[data-action="window-toggle-maximize"] img');
+  if (!img || typeof img.getAttribute !== "function") return;
+
+  var maximized = false;
+  try {
+    maximized = Window.this && (Window.this.state === 4 || Window.this.state === Window.WINDOW_MAXIMIZED);
+  } catch (_e) {}
+
+  var theme = "light";
+  try { theme = document.attributes["theme"] || "light"; } catch (_e) {}
+
+  if (maximized) {
+    img.setAttribute("data-icon-light", img.getAttribute("data-icon-restore-light") || "");
+    img.setAttribute("data-icon-dark", img.getAttribute("data-icon-restore-dark") || "");
+  } else {
+    img.setAttribute("data-icon-light", img.getAttribute("data-icon-maximize-light") || "");
+    img.setAttribute("data-icon-dark", img.getAttribute("data-icon-maximize-dark") || "");
+  }
+
+  var iconUrl = img.getAttribute("data-icon-" + theme);
+  if (iconUrl) img.src = iconUrl;
+}
+
+function bindWindowStateChangeHandler() {
+  if (typeof Window === "undefined" || !Window.this) {
+    return false;
+  }
+
+  if (typeof Window.this.on === "function") {
+    Window.this.on("statechange", function () {
+      updateMaximizeButtonIcon();
+    });
+  }
+
+  if (typeof document !== "undefined" && typeof document.on === "function") {
+    document.on("sizechange", function () {
+      updateMaximizeButtonIcon();
+    });
+  }
+
+  updateMaximizeButtonIcon();
+  return true;
+}
+
 function handleDocumentReady() {
   initializeInteractions();
 }
@@ -294,6 +356,8 @@ function handleClick(target) {
     } else if (action === "error-ok") {
       setErrorOverlayOpen(false);
       requestErrorDismiss();
+    } else if (action === "window-toggle-maximize") {
+      toggleWindowMaximize();
     } else if (action === "recent-file") {
       const index = actionTarget.getAttribute("data-recent-index");
       if (index !== null && index !== "") {
@@ -1108,6 +1172,7 @@ function initializeInteractions() {
     bindKeyboardShortcuts();
     bindTitlebarRecentFilesContextMenu();
     bindRecentFilesMenuHandler();
+    bindWindowStateChangeHandler();
   }
 
   bindMarkdownContextMenuHandler();

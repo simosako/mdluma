@@ -17,6 +17,7 @@ pub struct WindowChromeState {
 pub trait WindowChromeController {
     fn minimize(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError>;
     fn toggle_maximize(&self, hwnd: SciterWindowHandle) -> Result<WindowChromeState, ViewerError>;
+    fn is_maximized(&self, hwnd: SciterWindowHandle) -> Result<bool, ViewerError>;
     fn close(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError>;
 }
 
@@ -30,6 +31,10 @@ impl WindowChromeController for WindowsWindowChrome {
 
     fn toggle_maximize(&self, hwnd: SciterWindowHandle) -> Result<WindowChromeState, ViewerError> {
         toggle_maximize_with(hwnd, &RuntimeWin32)
+    }
+
+    fn is_maximized(&self, hwnd: SciterWindowHandle) -> Result<bool, ViewerError> {
+        is_maximized_with(hwnd, &RuntimeWin32)
     }
 
     fn close(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
@@ -71,6 +76,14 @@ fn toggle_maximize_with(
     Ok(WindowChromeState {
         maximized: !maximized,
     })
+}
+
+fn is_maximized_with(
+    hwnd: SciterWindowHandle,
+    win32: &impl Win32WindowChrome,
+) -> Result<bool, ViewerError> {
+    ensure_live_window(hwnd, win32)?;
+    Ok(win32.is_zoomed(hwnd))
 }
 
 fn close_with(hwnd: SciterWindowHandle, win32: &impl Win32WindowChrome) -> Result<(), ViewerError> {
@@ -247,9 +260,9 @@ extern "system" {
 #[cfg(test)]
 mod tests {
     use super::{
-        close_with, minimize_with, set_window_corner_preference, toggle_maximize_with,
-        Win32WindowChrome, WindowChromeController, WindowChromeState, WindowsWindowChrome,
-        SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
+        close_with, is_maximized_with, minimize_with, set_window_corner_preference,
+        toggle_maximize_with, Win32WindowChrome, WindowChromeController, WindowChromeState,
+        WindowsWindowChrome, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
     };
     use crate::sciter::ffi::SciterWindowHandle;
     use crate::ViewerError;
@@ -319,6 +332,35 @@ mod tests {
             .minimize(std::ptr::null_mut())
             .expect_err("null hwnd must fail");
 
+        assert_eq!(
+            error,
+            ViewerError::ui("Windows window chrome action requires a live top-level window handle")
+        );
+    }
+
+    #[test]
+    fn is_maximized_returns_false_when_window_not_maximized() {
+        let seam = FakeWin32::default();
+        let maximized = is_maximized_with(fake_hwnd(), &seam).expect("check maximize state");
+        assert!(!maximized);
+    }
+
+    #[test]
+    fn is_maximized_returns_true_when_window_is_maximized() {
+        let seam = FakeWin32 {
+            maximized: true,
+            ..FakeWin32::default()
+        };
+        let maximized = is_maximized_with(fake_hwnd(), &seam).expect("check maximize state");
+        assert!(maximized);
+    }
+
+    #[test]
+    fn is_maximized_fails_on_null_hwnd() {
+        let chrome = WindowsWindowChrome;
+        let error = chrome
+            .is_maximized(std::ptr::null_mut())
+            .expect_err("null hwnd must fail");
         assert_eq!(
             error,
             ViewerError::ui("Windows window chrome action requires a live top-level window handle")
