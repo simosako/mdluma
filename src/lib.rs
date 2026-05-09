@@ -11,6 +11,8 @@ mod platform;
 mod sciter;
 mod settings;
 mod startup_args;
+#[cfg(test)]
+mod test_util;
 mod ui;
 mod viewer_launcher;
 
@@ -994,33 +996,7 @@ mod tests {
 
     // --- Task 3.3: External editor launcher wiring tests ---
 
-    use crate::external_editor::ExternalEditorLauncher;
-
-    struct RecordingExternalEditorLauncher {
-        launched: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
-    }
-
-    impl RecordingExternalEditorLauncher {
-        fn new() -> (Self, Arc<Mutex<Vec<(PathBuf, PathBuf)>>>) {
-            let launched = Arc::new(Mutex::new(Vec::new()));
-            (
-                Self {
-                    launched: launched.clone(),
-                },
-                launched,
-            )
-        }
-    }
-
-    impl ExternalEditorLauncher for RecordingExternalEditorLauncher {
-        fn launch(&self, executable: &Path, document_path: &Path) -> Result<(), ViewerError> {
-            self.launched
-                .lock()
-                .unwrap()
-                .push((executable.to_path_buf(), document_path.to_path_buf()));
-            Ok(())
-        }
-    }
+    use crate::test_util::RecordingExternalEditorLauncher;
 
     #[test]
     fn startup_wires_external_editor_launcher_through_build_controller() {

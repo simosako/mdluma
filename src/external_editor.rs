@@ -29,10 +29,10 @@ impl ExternalEditorLauncher for ProcessExternalEditorLauncher {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex};
+    use std::path::Path;
 
     use super::{ExternalEditorLauncher, ProcessExternalEditorLauncher};
+    use crate::test_util::RecordingExternalEditorLauncher;
     use crate::ViewerError;
 
     struct FailingLauncher;
@@ -47,35 +47,9 @@ mod tests {
         }
     }
 
-    struct RecordingLauncher {
-        launched: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
-    }
-
-    impl RecordingLauncher {
-        fn new() -> (Self, Arc<Mutex<Vec<(PathBuf, PathBuf)>>>) {
-            let launched = Arc::new(Mutex::new(Vec::new()));
-            (
-                Self {
-                    launched: launched.clone(),
-                },
-                launched,
-            )
-        }
-    }
-
-    impl ExternalEditorLauncher for RecordingLauncher {
-        fn launch(&self, executable: &Path, document_path: &Path) -> Result<(), ViewerError> {
-            self.launched
-                .lock()
-                .unwrap()
-                .push((executable.to_path_buf(), document_path.to_path_buf()));
-            Ok(())
-        }
-    }
-
     #[test]
     fn trait_allows_mock_that_records_executable_and_document_path() {
-        let (launcher, records) = RecordingLauncher::new();
+        let (launcher, records) = RecordingExternalEditorLauncher::new();
         let executable = Path::new("C:\\tools\\editor.exe");
         let document_path = Path::new("C:\\docs\\notes.md");
 
@@ -89,7 +63,7 @@ mod tests {
 
     #[test]
     fn mock_launch_single_call_per_request() {
-        let (launcher, records) = RecordingLauncher::new();
+        let (launcher, records) = RecordingExternalEditorLauncher::new();
 
         launcher
             .launch(Path::new("editor.exe"), Path::new("file.md"))
