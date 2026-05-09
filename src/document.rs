@@ -52,6 +52,7 @@ impl DocumentLoader for FileDocumentLoader {
 #[cfg(test)]
 mod tests {
     use super::{DocumentLoader, FileDocumentLoader};
+    use crate::test_util::unique_test_dir;
     use crate::ViewerError;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -386,39 +387,4 @@ mod tests {
         );
     }
 
-    fn unique_test_dir(name: &str) -> TestDir {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("mdluma-{name}-{nonce}"));
-        TestDir { path }
-    }
-
-    #[derive(Debug)]
-    struct TestDir {
-        path: PathBuf,
-    }
-
-    impl AsRef<Path> for TestDir {
-        fn as_ref(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl std::ops::Deref for TestDir {
-        type Target = PathBuf;
-
-        fn deref(&self) -> &Self::Target {
-            &self.path
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            if self.path.exists() {
-                let _ = fs::remove_dir_all(&self.path);
-            }
-        }
-    }
 }

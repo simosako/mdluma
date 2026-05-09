@@ -256,9 +256,9 @@ fn validate_prerequisites_internal(
 mod tests {
     use super::*;
     use crate::sciter::runtime_assets::relative_distribution_prerequisite_paths;
+    use crate::test_util::unique_test_dir;
     use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::path::Path;
 
     #[test]
     fn distribution_configuration_requires_sciter_dll_next_to_executable() {
@@ -491,42 +491,6 @@ mod tests {
             path.extension()
                 .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("lib"))
         }));
-    }
-
-    fn unique_test_dir(name: &str) -> TestDir {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("mdluma-{name}-{nonce}"));
-        TestDir { path }
-    }
-
-    #[derive(Debug)]
-    struct TestDir {
-        path: PathBuf,
-    }
-
-    impl AsRef<Path> for TestDir {
-        fn as_ref(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl std::ops::Deref for TestDir {
-        type Target = PathBuf;
-
-        fn deref(&self) -> &Self::Target {
-            &self.path
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            if self.path.exists() {
-                let _ = fs::remove_dir_all(&self.path);
-            }
-        }
     }
 
     fn fake_api_error(_message: &str) -> SciterApi {
