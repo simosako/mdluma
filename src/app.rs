@@ -265,8 +265,7 @@ where
                 windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rect)
             };
             if ok != 0 {
-                // create_window のデフォルト位置は (100,100) なので、差分を返す
-                return (rect.left - 100, rect.top - 100);
+                return (rect.left, rect.top);
             }
         }
         (0, 0)
@@ -274,7 +273,7 @@ where
 
     #[cfg(not(windows))]
     fn parent_window_position(&self) -> (i32, i32) {
-        (0, 0)
+        (100, 100)
     }
 
     fn toggle_theme(&mut self) -> Result<(), ViewerError> {
