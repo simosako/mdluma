@@ -76,6 +76,16 @@ MDLuma performs version checking on the Sciter DLL at startup to ensure compatib
 
 This approach allows for patch and build number differences while ensuring API-level compatibility.
 
+## Configuration
+
+Settings are stored in `%LOCALAPPDATA%\MDLuma\settings.json` (typically `C:\Users\<user>\AppData\Local\MDLuma\settings.json`).
+
+Most settings can be changed through the application UI — there is generally no need to edit the file directly. The only exception is `content_max_width_px`, which controls the maximum content width in pixels (default: `1040`, valid range: 640–2400). If you need to adjust it, add or modify the following line in `settings.json`:
+
+```json
+"content_max_width_px": 1100
+```
+
 ## Tech Stack
 
 - Rust
