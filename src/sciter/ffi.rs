@@ -491,13 +491,11 @@ impl SciterApi {
             }
         };
         if !is_on_screen_rect(&frame) {
-            let fallback_left = if has_cascade { cascade_left } else { 100 };
-            let fallback_top = if has_cascade { cascade_top } else { 100 };
             frame = SciterRect {
-                left: fallback_left,
-                top: fallback_top,
-                right: fallback_left + default_width,
-                bottom: fallback_top + default_height,
+                left: 100,
+                top: 100,
+                right: 100 + default_width,
+                bottom: 100 + default_height,
             };
         }
         let creation_flags = viewer_window_creation_flags();

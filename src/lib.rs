@@ -131,18 +131,20 @@ where
         LaunchAction::SpawnChildren { file_paths } => {
             const CASCADE_STEP: i32 = 30;
             const MAX_OFFSET: i32 = 200;
-            const BASE_LEFT: i32 = 100;
-            const BASE_TOP: i32 = 100;
+            let saved = crate::settings::SettingsFile::new().load();
+            let (base_left, base_top) = saved.window_geometry.map_or((100, 100), |geo| {
+                (geo.left, geo.top)
+            });
             for (index, file_path) in file_paths.into_iter().enumerate() {
                 let abs_left = if index == 0 {
                     0
                 } else {
-                    BASE_LEFT + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
+                    base_left + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
                 };
                 let abs_top = if index == 0 {
                     0
                 } else {
-                    BASE_TOP + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
+                    base_top + (index as i32 * CASCADE_STEP).min(MAX_OFFSET)
                 };
                 launcher
                     .launch_path(&file_path, abs_left, abs_top)
@@ -906,6 +908,56 @@ mod tests {
         assert!(result.is_err());
         let records = launched.lock().unwrap();
         assert_eq!(records.len(), 2);
+    }
+
+    struct CascadeRecordingLauncher {
+        records: Arc<Mutex<Vec<(PathBuf, i32, i32)>>>,
+    }
+
+    impl CascadeRecordingLauncher {
+        fn new() -> (Self, Arc<Mutex<Vec<(PathBuf, i32, i32)>>>) {
+            let records = Arc::new(Mutex::new(Vec::new()));
+            (Self { records: records.clone() }, records)
+        }
+    }
+
+    impl ViewerChildLauncher for CascadeRecordingLauncher {
+        fn launch_path(
+            &self,
+            path: &Path,
+            cascade_left: i32,
+            cascade_top: i32,
+        ) -> Result<(), ViewerError> {
+            self.records
+                .lock()
+                .unwrap()
+                .push((path.to_path_buf(), cascade_left, cascade_top));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn spawn_children_passes_zero_cascade_for_first_child_and_absolute_for_rest() {
+        let (launcher, records) = CascadeRecordingLauncher::new();
+
+        let (_stderr, result) =
+            execute_spawn_plan_with(vec![os("a.md"), os("b.md"), os("c.md")], launcher);
+
+        assert!(result.is_ok());
+        let r = records.lock().unwrap();
+        assert_eq!(r.len(), 3);
+
+        assert_eq!(r[0].0, PathBuf::from("a.md"));
+        assert_eq!(r[0].1, 0);
+        assert_eq!(r[0].2, 0);
+
+        assert_eq!(r[1].0, PathBuf::from("b.md"));
+        assert!(r[1].1 > 0);
+        assert!(r[1].2 > 0);
+
+        assert_eq!(r[2].0, PathBuf::from("c.md"));
+        assert_eq!(r[2].1, r[1].1 + 30);
+        assert_eq!(r[2].2, r[1].2 + 30);
     }
 
     #[test]

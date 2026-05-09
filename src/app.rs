@@ -273,7 +273,7 @@ where
 
     #[cfg(not(windows))]
     fn parent_window_position(&self) -> (i32, i32) {
-        (0, 0)
+        (100, 100)
     }
 
     fn toggle_theme(&mut self) -> Result<(), ViewerError> {
