@@ -357,6 +357,7 @@ mod tests {
         assert!(html.contains("data-icon-maximize-light"));
         assert!(html.contains("data-icon-maximize-dark"));
         assert!(html.contains("role=\"window-minimize\""));
+        assert!(html.contains("role=\"window-maximize\""));
         assert!(html.contains("role=\"window-close\""));
         assert!(html.contains("data-role=\"window-controls\""));
         assert!(html.contains("data-role=\"viewer-shell\""));

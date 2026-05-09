@@ -1,28 +1,23 @@
-function toggleWindowMaximize() {
-  if (typeof Window === "undefined" || !Window.this) return;
+var WINDOW_STATE_MAXIMIZED = (typeof Window !== "undefined" && typeof Window.WINDOW_MAXIMIZED === "number")
+  ? Window.WINDOW_MAXIMIZED
+  : 3;
+var WINDOW_STATE_SHOWN = (typeof Window !== "undefined" && typeof Window.WINDOW_SHOWN === "number")
+  ? Window.WINDOW_SHOWN
+  : 1;
 
-  var maximized = false;
+function isWindowMaximized() {
   try {
-    maximized = Window.this.state === 4 || Window.this.state === Window.WINDOW_MAXIMIZED;
-  } catch (_e) {}
-
-  if (maximized) {
-    Window.this.state = Window.WINDOW_SHOWN;
-  } else {
-    Window.this.state = Window.WINDOW_MAXIMIZED;
+    return Window.this && Window.this.state === WINDOW_STATE_MAXIMIZED;
+  } catch (_e) {
+    return false;
   }
-
-  updateMaximizeButtonIcon();
 }
 
 function updateMaximizeButtonIcon() {
   var img = document.querySelector('[data-action="window-toggle-maximize"] img');
   if (!img || typeof img.getAttribute !== "function") return;
 
-  var maximized = false;
-  try {
-    maximized = Window.this && (Window.this.state === 4 || Window.this.state === Window.WINDOW_MAXIMIZED);
-  } catch (_e) {}
+  var maximized = isWindowMaximized();
 
   var theme = "light";
   try { theme = document.attributes["theme"] || "light"; } catch (_e) {}
@@ -356,8 +351,6 @@ function handleClick(target) {
     } else if (action === "error-ok") {
       setErrorOverlayOpen(false);
       requestErrorDismiss();
-    } else if (action === "window-toggle-maximize") {
-      toggleWindowMaximize();
     } else if (action === "recent-file") {
       const index = actionTarget.getAttribute("data-recent-index");
       if (index !== null && index !== "") {

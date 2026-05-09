@@ -233,6 +233,7 @@ mod tests {
         assert!(index.contains("data-action=\"window-toggle-maximize\""));
         assert!(index.contains("data-action=\"window-close\""));
         assert!(index.contains("role=\"window-minimize\""));
+        assert!(index.contains("role=\"window-maximize\""));
         assert!(index.contains("role=\"window-close\""));
         assert!(index.contains("role=\"window-caption\""));
 
