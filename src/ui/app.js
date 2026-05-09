@@ -1,3 +1,60 @@
+var WINDOW_STATE_MAXIMIZED = (typeof Window !== "undefined" && typeof Window.WINDOW_MAXIMIZED === "number")
+  ? Window.WINDOW_MAXIMIZED
+  : 3;
+var WINDOW_STATE_SHOWN = (typeof Window !== "undefined" && typeof Window.WINDOW_SHOWN === "number")
+  ? Window.WINDOW_SHOWN
+  : 1;
+
+function isWindowMaximized() {
+  try {
+    return Window.this && Window.this.state === WINDOW_STATE_MAXIMIZED;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function updateMaximizeButtonIcon() {
+  var img = document.querySelector('[data-action="window-toggle-maximize"] img');
+  if (!img || typeof img.getAttribute !== "function") return;
+
+  var maximized = isWindowMaximized();
+
+  var theme = "light";
+  try { theme = document.attributes["theme"] || "light"; } catch (_e) {}
+
+  if (maximized) {
+    img.setAttribute("data-icon-light", img.getAttribute("data-icon-restore-light") || "");
+    img.setAttribute("data-icon-dark", img.getAttribute("data-icon-restore-dark") || "");
+  } else {
+    img.setAttribute("data-icon-light", img.getAttribute("data-icon-maximize-light") || "");
+    img.setAttribute("data-icon-dark", img.getAttribute("data-icon-maximize-dark") || "");
+  }
+
+  var iconUrl = img.getAttribute("data-icon-" + theme);
+  if (iconUrl) img.src = iconUrl;
+}
+
+function bindWindowStateChangeHandler() {
+  if (typeof Window === "undefined" || !Window.this) {
+    return false;
+  }
+
+  if (typeof Window.this.on === "function") {
+    Window.this.on("statechange", function () {
+      updateMaximizeButtonIcon();
+    });
+  }
+
+  if (typeof document !== "undefined" && typeof document.on === "function") {
+    document.on("sizechange", function () {
+      updateMaximizeButtonIcon();
+    });
+  }
+
+  updateMaximizeButtonIcon();
+  return true;
+}
+
 function handleDocumentReady() {
   initializeInteractions();
 }
@@ -1108,6 +1165,7 @@ function initializeInteractions() {
     bindKeyboardShortcuts();
     bindTitlebarRecentFilesContextMenu();
     bindRecentFilesMenuHandler();
+    bindWindowStateChangeHandler();
   }
 
   bindMarkdownContextMenuHandler();

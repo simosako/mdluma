@@ -42,6 +42,7 @@ impl HtmlShell for DefaultHtmlShell {
         let more_icon = icon_urls(&self.assets, IconName::More, icon_theme)?;
         let window_minimize_icon = icon_urls(&self.assets, IconName::WindowMinimize, icon_theme)?;
         let window_maximize_icon = icon_urls(&self.assets, IconName::WindowMaximize, icon_theme)?;
+        let window_restore_icon = icon_urls(&self.assets, IconName::WindowRestore, icon_theme)?;
         let window_close_icon = icon_urls(&self.assets, IconName::WindowClose, icon_theme)?;
         let toggle_icon_url = self
             .assets
@@ -96,6 +97,8 @@ impl HtmlShell for DefaultHtmlShell {
             ("{{WINDOW_MAXIMIZE_ICON}}", window_maximize_icon.current.as_str()),
             ("{{WINDOW_MAXIMIZE_ICON_LIGHT}}", window_maximize_icon.light.as_str()),
             ("{{WINDOW_MAXIMIZE_ICON_DARK}}", window_maximize_icon.dark.as_str()),
+            ("{{WINDOW_RESTORE_ICON_LIGHT}}", window_restore_icon.light.as_str()),
+            ("{{WINDOW_RESTORE_ICON_DARK}}", window_restore_icon.dark.as_str()),
             ("{{WINDOW_CLOSE_ICON}}", window_close_icon.current.as_str()),
             ("{{WINDOW_CLOSE_ICON_LIGHT}}", window_close_icon.light.as_str()),
             ("{{WINDOW_CLOSE_ICON_DARK}}", window_close_icon.dark.as_str()),
@@ -349,6 +352,10 @@ mod tests {
         assert!(html.contains("data-action=\"window-minimize\""));
         assert!(html.contains("data-action=\"window-toggle-maximize\""));
         assert!(html.contains("data-action=\"window-close\""));
+        assert!(html.contains("data-icon-restore-light"));
+        assert!(html.contains("data-icon-restore-dark"));
+        assert!(html.contains("data-icon-maximize-light"));
+        assert!(html.contains("data-icon-maximize-dark"));
         assert!(html.contains("role=\"window-minimize\""));
         assert!(html.contains("role=\"window-maximize\""));
         assert!(html.contains("role=\"window-close\""));

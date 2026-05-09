@@ -27,6 +27,7 @@ pub enum IconName {
     Moon,
     WindowMinimize,
     WindowMaximize,
+    WindowRestore,
     WindowClose,
 }
 
@@ -55,6 +56,8 @@ impl IconName {
             (Self::WindowMinimize, IconTheme::Dark) => include_str!("../../assets/dark/window-minimize.svg"),
             (Self::WindowMaximize, IconTheme::Light) => include_str!("../../assets/light/window-maximize.svg"),
             (Self::WindowMaximize, IconTheme::Dark) => include_str!("../../assets/dark/window-maximize.svg"),
+            (Self::WindowRestore, IconTheme::Light) => include_str!("../../assets/light/window-restore.svg"),
+            (Self::WindowRestore, IconTheme::Dark) => include_str!("../../assets/dark/window-restore.svg"),
             (Self::WindowClose, IconTheme::Light) => include_str!("../../assets/light/window-close.svg"),
             (Self::WindowClose, IconTheme::Dark) => include_str!("../../assets/dark/window-close.svg"),
         }

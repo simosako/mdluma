@@ -1787,6 +1787,10 @@ mod tests {
             Ok(WindowChromeState { maximized: true })
         }
 
+        fn is_maximized(&self, _hwnd: SciterWindowHandle) -> Result<bool, ViewerError> {
+            Ok(false)
+        }
+
         fn close(&self, _hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
             self.calls.borrow_mut().push(WindowChromeAction::Close);
             Err(ViewerError::ui("window close rejected"))
@@ -1813,6 +1817,10 @@ mod tests {
                 .borrow_mut()
                 .push(WindowChromeAction::ToggleMaximize);
             Ok(WindowChromeState { maximized: true })
+        }
+
+        fn is_maximized(&self, _hwnd: SciterWindowHandle) -> Result<bool, ViewerError> {
+            Ok(false)
         }
 
         fn close(&self, _hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
