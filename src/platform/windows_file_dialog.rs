@@ -200,9 +200,12 @@ fn runtime_pick_external_editor_file(
     ))
 }
 
-#[cfg(windows)]
 fn widestr(value: &str) -> Vec<u16> {
-    value.encode_utf16().collect()
+    let mut wide: Vec<u16> = value.encode_utf16().collect();
+    if !matches!(wide.last(), Some(0)) {
+        wide.push(0);
+    }
+    wide
 }
 
 #[cfg(test)]
@@ -310,6 +313,25 @@ mod tests {
         let result = pick_markdown_file_with(None, |_| Ok(None)).expect("cancel editor dialog");
 
         assert_eq!(result, OpenFileResult::Cancelled);
+    }
+
+    #[test]
+    fn widestr_appends_trailing_nul_for_plain_strings() {
+        let wide = super::widestr("Open Markdown file");
+
+        assert_eq!(wide.last().copied(), Some(0));
+        assert_eq!(
+            String::from_utf16(&wide[..wide.len() - 1]).expect("decode wide string"),
+            "Open Markdown file"
+        );
+    }
+
+    #[test]
+    fn widestr_preserves_existing_terminal_nuls_for_filter_strings() {
+        let wide = super::widestr("Markdown Files\0*.md\0All Files\0*.*\0\0");
+
+        assert!(wide.ends_with(&[0, 0]));
+        assert!(!wide.ends_with(&[0, 0, 0]));
     }
 
     #[test]
