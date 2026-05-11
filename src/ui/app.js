@@ -991,7 +991,7 @@ function isCloseWindowShortcut(event) {
   const code = typeof event.code === "string" ? event.code.toLowerCase() : "";
   const keyCode = typeof event.keyCode === "number" ? event.keyCode : -1;
   const ctrlOrMetaW = (event.ctrlKey || event.metaKey) && (key === "w" || code === "keyw" || keyCode === 87);
-  const altF4 = !!event.altKey && (key === "f4" || code === "f4" || keyCode === 115);
+  const altF4 = event.altKey && (key === "f4" || code === "f4" || keyCode === 115);
   return ctrlOrMetaW || altF4;
 }
 
