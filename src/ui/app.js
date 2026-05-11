@@ -75,6 +75,14 @@ function openFileButton() {
   return document.querySelector('[data-action="open-file"]');
 }
 
+function closeWindowButton() {
+  if (!document || typeof document.querySelector !== "function") {
+    return null;
+  }
+
+  return document.querySelector('[data-action="window-close"]');
+}
+
 function requestThemeToggle() {
   if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
     return;
@@ -88,6 +96,20 @@ function requestExternalEditor() {
   }
 
   Window.this.xcall("external-editor-requested");
+}
+
+function requestCloseWindow() {
+  const button = closeWindowButton();
+  if (button && typeof button.click === "function") {
+    button.click();
+    return;
+  }
+
+  if (typeof Window === "undefined" || !Window.this || typeof Window.this.close !== "function") {
+    return;
+  }
+
+  Window.this.close();
 }
 
 function requestExternalEditorSetting() {
@@ -948,6 +970,31 @@ function isOpenFileShortcut(event) {
   return hasModifier && (key === "o" || code === "keyo" || keyCode === 79);
 }
 
+function isExternalEditorShortcut(event) {
+  if (!event) {
+    return false;
+  }
+
+  const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+  const code = typeof event.code === "string" ? event.code.toLowerCase() : "";
+  const keyCode = typeof event.keyCode === "number" ? event.keyCode : -1;
+  const hasModifier = event.ctrlKey || event.metaKey;
+  return hasModifier && (key === "e" || code === "keye" || keyCode === 69);
+}
+
+function isCloseWindowShortcut(event) {
+  if (!event) {
+    return false;
+  }
+
+  const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+  const code = typeof event.code === "string" ? event.code.toLowerCase() : "";
+  const keyCode = typeof event.keyCode === "number" ? event.keyCode : -1;
+  const ctrlOrMetaW = (event.ctrlKey || event.metaKey) && (key === "w" || code === "keyw" || keyCode === 87);
+  const altF4 = !!event.altKey && (key === "f4" || code === "f4" || keyCode === 115);
+  return ctrlOrMetaW || altF4;
+}
+
 function isEnterKey(event) {
   if (!event) {
     return false;
@@ -1019,6 +1066,22 @@ function handleKeyboardShortcuts(event) {
     }
 
     requestOpenFile();
+    return;
+  }
+
+  if (isExternalEditorShortcut(event)) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    requestExternalEditor();
+    return;
+  }
+
+  if (isCloseWindowShortcut(event)) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    requestCloseWindow();
     return;
   }
 
