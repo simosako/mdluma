@@ -605,6 +605,99 @@ if (event.source.innerHTML.includes('data-action="external-editor" disabled')) {
     }
 
     #[test]
+    fn markdown_context_menu_select_all_click_selects_markdown_body_contents() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const openButton = {
+  addEventListener() {},
+};
+
+const markdownBodyElement = {};
+let focused = 0;
+let removedRanges = 0;
+let addedRangeTarget = null;
+
+const markdownSelectionHost = {
+  focus() {
+    focused += 1;
+  },
+  selection: {
+    removeAllRanges() {
+      removedRanges += 1;
+    },
+    addRange(range) {
+      addedRangeTarget = range.target;
+    },
+  },
+};
+
+global.Range = function Range() {
+  this.target = null;
+};
+
+global.Range.prototype.selectNodeContents = function(node) {
+  this.target = node;
+};
+
+global.document = {
+  readyState: "loading",
+  addEventListener() {},
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return openButton;
+    }
+    if (selector === "[data-markdown-selection-host]") {
+      return markdownSelectionHost;
+    }
+    if (selector === "[data-markdown-body]") {
+      return markdownBodyElement;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+const actionTarget = {
+  disabled: false,
+  getAttribute(name) {
+    if (name === "data-action") {
+      return "select-all";
+    }
+    return null;
+  },
+  closest(selector) {
+    if (selector === "[data-action]") {
+      return this;
+    }
+    return null;
+  },
+};
+
+globalThis.__mdlumaTestHooks.handleClick(actionTarget);
+
+if (focused !== 1) {
+  throw new Error("select all should focus the markdown selection host once, got " + focused);
+}
+if (removedRanges !== 1) {
+  throw new Error("select all should clear existing ranges once, got " + removedRanges);
+}
+if (addedRangeTarget !== markdownBodyElement) {
+  throw new Error("select all should target the markdown body contents");
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
     fn titlebar_interaction_script_dispatches_only_supported_commands() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
