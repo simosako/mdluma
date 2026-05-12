@@ -1858,7 +1858,7 @@ global.document = {
 eval(scriptSource);
 
 let prevented = 0;
-listeners["^keydown"]({
+listeners.keydown({
   ctrlKey: true,
   metaKey: false,
   key: "e",
@@ -1939,7 +1939,7 @@ global.document = {
 eval(scriptSource);
 
 let prevented = 0;
-listeners["^keydown"]({
+listeners.keydown({
   ctrlKey: true,
   metaKey: false,
   altKey: false,
@@ -2023,7 +2023,7 @@ global.document = {
 eval(scriptSource);
 
 let prevented = 0;
-listeners["^keydown"]({
+listeners.keydown({
   ctrlKey: false,
   metaKey: false,
   altKey: true,
