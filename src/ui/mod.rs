@@ -40,26 +40,54 @@ impl IconName {
             (Self::Open, IconTheme::Dark) => include_str!("../../assets/dark/open.svg"),
             (Self::Search, IconTheme::Light) => include_str!("../../assets/light/search.svg"),
             (Self::Search, IconTheme::Dark) => include_str!("../../assets/dark/search.svg"),
-            (Self::SearchPrev, IconTheme::Light) => include_str!("../../assets/light/search-prev.svg"),
-            (Self::SearchPrev, IconTheme::Dark) => include_str!("../../assets/dark/search-prev.svg"),
-            (Self::SearchNext, IconTheme::Light) => include_str!("../../assets/light/search-next.svg"),
-            (Self::SearchNext, IconTheme::Dark) => include_str!("../../assets/dark/search-next.svg"),
-            (Self::SearchClose, IconTheme::Light) => include_str!("../../assets/light/search-close.svg"),
-            (Self::SearchClose, IconTheme::Dark) => include_str!("../../assets/dark/search-close.svg"),
+            (Self::SearchPrev, IconTheme::Light) => {
+                include_str!("../../assets/light/search-prev.svg")
+            }
+            (Self::SearchPrev, IconTheme::Dark) => {
+                include_str!("../../assets/dark/search-prev.svg")
+            }
+            (Self::SearchNext, IconTheme::Light) => {
+                include_str!("../../assets/light/search-next.svg")
+            }
+            (Self::SearchNext, IconTheme::Dark) => {
+                include_str!("../../assets/dark/search-next.svg")
+            }
+            (Self::SearchClose, IconTheme::Light) => {
+                include_str!("../../assets/light/search-close.svg")
+            }
+            (Self::SearchClose, IconTheme::Dark) => {
+                include_str!("../../assets/dark/search-close.svg")
+            }
             (Self::More, IconTheme::Light) => include_str!("../../assets/light/more.svg"),
             (Self::More, IconTheme::Dark) => include_str!("../../assets/dark/more.svg"),
             (Self::Sun, IconTheme::Light) => include_str!("../../assets/light/sun.svg"),
             (Self::Sun, IconTheme::Dark) => include_str!("../../assets/dark/sun.svg"),
             (Self::Moon, IconTheme::Light) => include_str!("../../assets/light/moon.svg"),
             (Self::Moon, IconTheme::Dark) => include_str!("../../assets/dark/moon.svg"),
-            (Self::WindowMinimize, IconTheme::Light) => include_str!("../../assets/light/window-minimize.svg"),
-            (Self::WindowMinimize, IconTheme::Dark) => include_str!("../../assets/dark/window-minimize.svg"),
-            (Self::WindowMaximize, IconTheme::Light) => include_str!("../../assets/light/window-maximize.svg"),
-            (Self::WindowMaximize, IconTheme::Dark) => include_str!("../../assets/dark/window-maximize.svg"),
-            (Self::WindowRestore, IconTheme::Light) => include_str!("../../assets/light/window-restore.svg"),
-            (Self::WindowRestore, IconTheme::Dark) => include_str!("../../assets/dark/window-restore.svg"),
-            (Self::WindowClose, IconTheme::Light) => include_str!("../../assets/light/window-close.svg"),
-            (Self::WindowClose, IconTheme::Dark) => include_str!("../../assets/dark/window-close.svg"),
+            (Self::WindowMinimize, IconTheme::Light) => {
+                include_str!("../../assets/light/window-minimize.svg")
+            }
+            (Self::WindowMinimize, IconTheme::Dark) => {
+                include_str!("../../assets/dark/window-minimize.svg")
+            }
+            (Self::WindowMaximize, IconTheme::Light) => {
+                include_str!("../../assets/light/window-maximize.svg")
+            }
+            (Self::WindowMaximize, IconTheme::Dark) => {
+                include_str!("../../assets/dark/window-maximize.svg")
+            }
+            (Self::WindowRestore, IconTheme::Light) => {
+                include_str!("../../assets/light/window-restore.svg")
+            }
+            (Self::WindowRestore, IconTheme::Dark) => {
+                include_str!("../../assets/dark/window-restore.svg")
+            }
+            (Self::WindowClose, IconTheme::Light) => {
+                include_str!("../../assets/light/window-close.svg")
+            }
+            (Self::WindowClose, IconTheme::Dark) => {
+                include_str!("../../assets/dark/window-close.svg")
+            }
         }
     }
 }
@@ -288,7 +316,7 @@ mod tests {
         assert!(js.contains("Clipboard.writeText"));
         assert!(js.contains("ctrlKey"));
         assert!(js.contains("metaKey"));
-        assert!(js.contains("key === \"o\""));
+        assert!(js.contains("isModifiedLetterShortcut(event, \"o\")"));
         assert!(js.contains("selection.toString()"));
         assert!(js.contains("[data-markdown-body]"));
         assert!(js.contains("[data-markdown-selection-host]"));
@@ -1785,6 +1813,175 @@ global.process = originalProcess;
     }
 
     #[test]
+    fn keyboard_shortcut_ctrl_w_requests_window_close_once() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const listeners = {};
+const calls = [];
+let closeClicks = 0;
+
+const closeButton = {
+  click() {
+    closeClicks += 1;
+  },
+};
+
+global.Window = {
+  this: {
+    xcall(name) {
+      calls.push(name);
+    },
+  },
+};
+
+global.document = {
+  readyState: "loading",
+  activeElement: null,
+  on(type, selector, handler) {
+    if (typeof handler === "function") {
+      listeners[type] = handler;
+      return true;
+    }
+    listeners[type] = selector;
+    return true;
+  },
+  addEventListener(type, handler) {
+    listeners[type] = handler;
+  },
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return { addEventListener() {} };
+    }
+    if (selector === '[data-action="window-close"]') {
+      return closeButton;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+let prevented = 0;
+listeners.keydown({
+  ctrlKey: true,
+  metaKey: false,
+  altKey: false,
+  key: "w",
+  code: "KeyW",
+  preventDefault() {
+    prevented += 1;
+  },
+});
+
+if (calls.length !== 0) {
+  throw new Error("ctrl+w should not xcall, got: " + JSON.stringify(calls));
+}
+
+if (closeClicks !== 1) {
+  throw new Error("ctrl+w should click close button once, got " + closeClicks);
+}
+
+if (prevented !== 1) {
+  throw new Error("ctrl+w should prevent default once, got " + prevented);
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
+    fn keyboard_shortcut_alt_f4_requests_window_close_once() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const listeners = {};
+const calls = [];
+let closeClicks = 0;
+
+const closeButton = {
+  click() {
+    closeClicks += 1;
+  },
+};
+
+global.Window = {
+  this: {
+    xcall(name) {
+      calls.push(name);
+    },
+  },
+};
+
+global.document = {
+  readyState: "loading",
+  activeElement: null,
+  on(type, selector, handler) {
+    if (typeof handler === "function") {
+      listeners[type] = handler;
+      return true;
+    }
+    listeners[type] = selector;
+    return true;
+  },
+  addEventListener(type, handler) {
+    listeners[type] = handler;
+  },
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return { addEventListener() {} };
+    }
+    if (selector === '[data-action="window-close"]') {
+      return closeButton;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+let prevented = 0;
+listeners.keydown({
+  ctrlKey: false,
+  metaKey: false,
+  altKey: true,
+  key: "F4",
+  code: "F4",
+  keyCode: 115,
+  preventDefault() {
+    prevented += 1;
+  },
+});
+
+if (calls.length !== 0) {
+  throw new Error("alt+f4 should not xcall, got: " + JSON.stringify(calls));
+}
+
+if (closeClicks !== 1) {
+  throw new Error("alt+f4 should click close button once, got " + closeClicks);
+}
+
+if (prevented !== 1) {
+  throw new Error("alt+f4 should prevent default once, got " + prevented);
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
     fn theme_toggle_click_sends_xcall_to_rust() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
@@ -2861,7 +3058,8 @@ if (JSON.stringify(dropCall.args) !== JSON.stringify([
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
-        let script_path = temp_dir.join(format!("ui-assertions-{}-{nonce}.cjs", std::process::id()));
+        let script_path =
+            temp_dir.join(format!("ui-assertions-{}-{nonce}.cjs", std::process::id()));
         fs::write(&script_path, harness).expect("write node assertion harness");
 
         let output = Command::new("node")

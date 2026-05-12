@@ -9,7 +9,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE,
-    WM_DROPFILES, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
+    WM_DROPFILES, WM_KEYDOWN, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
@@ -1538,6 +1538,7 @@ extern "system" {
 #[cfg(windows)]
 #[link(name = "User32")]
 extern "system" {
+    fn GetKeyState(virtual_key: i32) -> i16;
     fn ShowWindow(window: SciterWindowHandle, command: i32) -> i32;
     fn GetWindowLongPtrW(window: SciterWindowHandle, index: i32) -> isize;
     fn SetWindowLongPtrW(window: SciterWindowHandle, index: i32, value: isize) -> isize;
@@ -1623,6 +1624,15 @@ struct WindowPos {
 
 #[cfg(windows)]
 type NativeDropDispatchFn = unsafe extern "system" fn(*mut core::ffi::c_void);
+#[cfg(windows)]
+type NativeShortcutDispatchFn = unsafe extern "system" fn(*mut core::ffi::c_void, u32);
+
+#[cfg(windows)]
+pub(crate) const NATIVE_SHORTCUT_EXTERNAL_EDITOR: u32 = 1;
+#[cfg(windows)]
+const VK_CONTROL: i32 = 0x11;
+#[cfg(windows)]
+const VK_E: usize = 0x45;
 
 // SAFETY: These are accessed exclusively from the single-window UI thread (see comment above).
 #[cfg(windows)]
@@ -1632,6 +1642,12 @@ static mut DL_DROP_DISPATCH_FN: Option<NativeDropDispatchFn> = None;
 static mut DL_DROP_DISPATCH_CTX: *mut core::ffi::c_void = std::ptr::null_mut();
 
 #[cfg(windows)]
+static mut DL_SHORTCUT_DISPATCH_FN: Option<NativeShortcutDispatchFn> = None;
+
+#[cfg(windows)]
+static mut DL_SHORTCUT_DISPATCH_CTX: *mut core::ffi::c_void = std::ptr::null_mut();
+
+#[cfg(windows)]
 pub(crate) fn set_native_drop_dispatch(
     ctx: *mut core::ffi::c_void,
     dispatch: NativeDropDispatchFn,
@@ -1639,6 +1655,17 @@ pub(crate) fn set_native_drop_dispatch(
     unsafe {
         DL_DROP_DISPATCH_FN = Some(dispatch);
         DL_DROP_DISPATCH_CTX = ctx;
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn set_native_shortcut_dispatch(
+    ctx: *mut core::ffi::c_void,
+    dispatch: NativeShortcutDispatchFn,
+) {
+    unsafe {
+        DL_SHORTCUT_DISPATCH_FN = Some(dispatch);
+        DL_SHORTCUT_DISPATCH_CTX = ctx;
     }
 }
 
@@ -1683,6 +1710,17 @@ unsafe extern "system" fn deferred_load_wnd_proc(
         return 0;
     }
 
+    if msg == WM_KEYDOWN && wparam == VK_E && is_control_key_down() {
+        let dispatch_fn = std::ptr::read(std::ptr::addr_of!(DL_SHORTCUT_DISPATCH_FN));
+        let dispatch_ctx = std::ptr::read(std::ptr::addr_of!(DL_SHORTCUT_DISPATCH_CTX));
+        if let Some(dispatch) = dispatch_fn {
+            if !dispatch_ctx.is_null() {
+                unsafe { dispatch(dispatch_ctx, NATIVE_SHORTCUT_EXTERNAL_EDITOR) };
+                return 0;
+            }
+        }
+    }
+
     if msg == WM_WINDOWPOSCHANGING {
         if std::ptr::read(std::ptr::addr_of!(DL_POSITION_LOCKED)) {
             let pos = &mut *(lparam as *mut WindowPos);
@@ -1722,6 +1760,11 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     } else {
         0
     }
+}
+
+#[cfg(windows)]
+fn is_control_key_down() -> bool {
+    unsafe { GetKeyState(VK_CONTROL) < 0 }
 }
 
 #[cfg(windows)]
