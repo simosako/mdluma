@@ -83,14 +83,6 @@ function closeWindowButton() {
   return document.querySelector('[data-action="window-close"]');
 }
 
-function externalEditorButton() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector('[data-action="external-editor"]');
-}
-
 function requestThemeToggle() {
   if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
     return;
@@ -104,16 +96,6 @@ function requestExternalEditor() {
   }
 
   Window.this.xcall("external-editor-requested");
-}
-
-function requestExternalEditorFromShortcut() {
-  const button = externalEditorButton();
-  if (button && !button.disabled && typeof button.click === "function") {
-    button.click();
-    return;
-  }
-
-  requestExternalEditor();
 }
 
 function requestCloseWindow() {
@@ -971,10 +953,6 @@ function isOpenFileShortcut(event) {
   return isModifiedLetterShortcut(event, "o");
 }
 
-function isExternalEditorShortcut(event) {
-  return isModifiedLetterShortcut(event, "e");
-}
-
 function isModifiedLetterShortcut(event, letter) {
   if (!event) {
     return false;
@@ -1085,14 +1063,6 @@ function handleKeyboardShortcuts(event) {
     }
 
     requestOpenFile();
-    return;
-  }
-
-  if (isExternalEditorShortcut(event)) {
-    if (typeof event.preventDefault === "function") {
-      event.preventDefault();
-    }
-    requestExternalEditorFromShortcut();
     return;
   }
 

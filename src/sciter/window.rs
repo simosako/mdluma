@@ -4,6 +4,8 @@ use crate::sciter::ffi::{
     SciterWindowHandle, ScriptingMethodParams, BEHAVIOR_EVENT_CUSTOM, HANDLE_BEHAVIOR_EVENT,
     HANDLE_EXCHANGE, HANDLE_SCRIPTING_METHOD_CALL, X_DROP, X_WILL_ACCEPT_DROP,
 };
+#[cfg(windows)]
+use crate::sciter::ffi::{set_native_shortcut_dispatch, NATIVE_SHORTCUT_EXTERNAL_EDITOR};
 use crate::sciter::runtime::SciterRuntime;
 use crate::settings::BodyFontSettings;
 use crate::{
@@ -324,6 +326,11 @@ impl SciterWindow {
                 self.event_bridge_installed = true;
                 self.event_bridge_tag = binding.cast();
                 set_native_drop_dispatch(binding.cast(), dispatch_native_drops_from_wndproc);
+                #[cfg(windows)]
+                set_native_shortcut_dispatch(
+                    binding.cast(),
+                    dispatch_native_shortcut_from_wndproc,
+                );
                 Ok(())
             }
             Err(error) => {
@@ -472,6 +479,19 @@ unsafe extern "system" fn dispatch_native_drops_from_wndproc(ctx: *mut core::ffi
             (binding.dispatch_viewer)(binding.handler, ViewerCommand::OpenDroppedFiles(paths))
         };
     }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn dispatch_native_shortcut_from_wndproc(
+    ctx: *mut core::ffi::c_void,
+    shortcut: u32,
+) {
+    let binding = unsafe { &*(ctx as *const HandlerBinding<'static>) };
+    let command = match shortcut {
+        NATIVE_SHORTCUT_EXTERNAL_EDITOR => ViewerCommand::ExternalEditorRequested,
+        _ => return,
+    };
+    let _ = unsafe { (binding.dispatch_viewer)(binding.handler, command) };
 }
 
 unsafe fn dispatch_window_chrome_command(
@@ -731,6 +751,11 @@ impl SciterWindow {
                 (&mut params as *mut ScriptingMethodParams).cast(),
             )
         }
+    }
+
+    #[cfg(windows)]
+    fn dispatch_test_native_shortcut(&mut self, shortcut: u32) {
+        unsafe { dispatch_native_shortcut_from_wndproc(self.event_bridge_tag, shortcut) };
     }
 }
 
@@ -1024,6 +1049,8 @@ mod tests {
     use crate::sciter::ffi::{
         SciterApi, SciterCallback, SciterWindowHandle, ScriptingMethodParams,
     };
+    #[cfg(windows)]
+    use crate::sciter::ffi::NATIVE_SHORTCUT_EXTERNAL_EDITOR;
     use crate::ViewerError;
     use crate::{WindowChromeController, WindowChromeState};
     use std::cell::RefCell;
@@ -1471,6 +1498,33 @@ mod tests {
                 WindowChromeAction::ToggleMaximize,
                 WindowChromeAction::Close,
             ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_shortcut_dispatches_external_editor_command() {
+        let app_calls = Rc::new(RefCell::new(Vec::new()));
+        let mut handler = RecordingCommandHandler {
+            calls: app_calls.clone(),
+        };
+        let fake_window_chrome = FakeWindowChrome::default();
+        let mut window = SciterWindow::with_api_and_window_chrome(
+            fake_api(true),
+            Box::new(fake_window_chrome),
+            None,
+        )
+        .expect("create window wrapper");
+
+        window
+            .bind_viewer_command_handler(&mut handler)
+            .expect("bind viewer command handler");
+
+        window.dispatch_test_native_shortcut(NATIVE_SHORTCUT_EXTERNAL_EDITOR);
+
+        assert_eq!(
+            *app_calls.borrow(),
+            vec![ViewerCommand::ExternalEditorRequested]
         );
     }
 
