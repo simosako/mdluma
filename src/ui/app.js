@@ -169,7 +169,7 @@ function isWithinMarkdownBodyHost(target) {
 }
 
 function markdownContextMenuHtml() {
-  return `<li name="edit:copy">Copy</li><li name="edit:selectall">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
+  return `<li name="edit:copy">Copy</li><li name="edit:selectall" data-action="select-all">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
 }
 
 function createMarkdownContextMenu() {
@@ -340,6 +340,8 @@ function handleClick(target) {
       requestThemeToggle();
     } else if (action === "font") {
       return;
+    } else if (action === "select-all") {
+      selectAllMarkdown();
     } else if (action === "external-editor") {
       requestExternalEditor();
     } else if (action === "external-editor-setting") {
@@ -377,6 +379,63 @@ function markdownSelectionOwner() {
   }
 
   return document.querySelector("[data-markdown-selection-host]") || markdownBody();
+}
+
+function markdownSelection() {
+  const owner = markdownSelectionOwner();
+  if (owner && owner.selection) {
+    return owner.selection;
+  }
+
+  const body = markdownBody();
+  if (body && body.selection) {
+    return body.selection;
+  }
+
+  return null;
+}
+
+function selectAllMarkdown() {
+  const owner = markdownSelectionOwner();
+  const body = markdownBody() || owner;
+  const selection = markdownSelection();
+  if (!body || !selection) {
+    return false;
+  }
+
+  if (owner && typeof owner.focus === "function") {
+    try {
+      owner.focus();
+    } catch (_error) {}
+  }
+
+  if (typeof selection.selectAll === "function") {
+    try {
+      selection.selectAll();
+      return true;
+    } catch (_error) {}
+  }
+
+  if (
+    typeof Range === "undefined" ||
+    typeof selection.removeAllRanges !== "function" ||
+    typeof selection.addRange !== "function"
+  ) {
+    return false;
+  }
+
+  try {
+    const range = new Range();
+    if (typeof range.selectNodeContents !== "function") {
+      return false;
+    }
+    range.selectNodeContents(body);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 let searchVisible = false;
