@@ -4,7 +4,7 @@ use crate::document::DocumentLoader;
 use crate::errors::ViewerError;
 use crate::external_editor::ExternalEditorLauncher;
 use crate::html_shell::{HtmlShell, ShellModel};
-use crate::markdown::MarkdownRenderer;
+use crate::markdown::{MarkdownRenderOptions, MarkdownRenderer};
 use crate::open_paths::plan_drop_open;
 use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
 use crate::sciter::window::{ViewerCommand, ViewerCommandBinder, ViewerCommandHandler, ViewerUi};
@@ -30,6 +30,7 @@ struct LoadedSettings {
     settings_file: SettingsFile,
     window_geometry: Option<WindowGeometry>,
     content_max_width_px: u16,
+    cjk_friendly_emphasis: bool,
 }
 
 impl LoadedSettings {
@@ -43,6 +44,7 @@ impl LoadedSettings {
             settings_file,
             window_geometry: settings.window_geometry,
             content_max_width_px: settings.content_max_width_px,
+            cjk_friendly_emphasis: settings.cjk_friendly_emphasis,
         }
     }
 }
@@ -71,6 +73,7 @@ pub struct AppController<D, F, L, R, H, U, S = (), E = ()> {
     settings_file: SettingsFile,
     window_geometry: Option<WindowGeometry>,
     content_max_width_px: u16,
+    cjk_friendly_emphasis: bool,
 }
 
 #[cfg(test)]
@@ -101,6 +104,7 @@ where
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
             content_max_width_px: s.content_max_width_px,
+            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
         }
     }
 
@@ -130,6 +134,7 @@ where
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
             content_max_width_px: s.content_max_width_px,
+            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
         }
     }
 }
@@ -165,6 +170,7 @@ where
         self.recent_files = s.recent_files;
         self.window_geometry = s.window_geometry;
         self.content_max_width_px = s.content_max_width_px;
+        self.cjk_friendly_emphasis = s.cjk_friendly_emphasis;
         self.settings_file = s.settings_file;
         self
     }
@@ -177,6 +183,7 @@ where
             recent_files: self.recent_files.clone(),
             window_geometry: self.window_geometry.clone(),
             content_max_width_px: self.content_max_width_px,
+            cjk_friendly_emphasis: self.cjk_friendly_emphasis,
         }
     }
 
@@ -328,7 +335,10 @@ where
             }
         };
 
-        let rendered = match self.renderer.render(&source) {
+        let rendered = match self
+            .renderer
+            .render(&source, self.markdown_render_options())
+        {
             Ok(rendered) => rendered,
             Err(error) => {
                 report_viewer_error(&error);
@@ -350,7 +360,10 @@ where
             }
         };
 
-        let rendered = match self.renderer.render(&source) {
+        let rendered = match self
+            .renderer
+            .render(&source, self.markdown_render_options())
+        {
             Ok(rendered) => rendered,
             Err(error) => {
                 report_viewer_error(&error);
@@ -403,6 +416,12 @@ where
         }
 
         Ok(html)
+    }
+
+    fn markdown_render_options(&self) -> MarkdownRenderOptions {
+        MarkdownRenderOptions {
+            cjk_friendly_emphasis: self.cjk_friendly_emphasis,
+        }
     }
 
     fn show_error_state(&mut self, error: ViewerError) -> Result<(), ViewerError> {
@@ -481,6 +500,7 @@ where
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
             content_max_width_px: s.content_max_width_px,
+            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
         }
     }
 
@@ -526,6 +546,7 @@ where
             settings_file: s.settings_file,
             window_geometry: s.window_geometry,
             content_max_width_px: s.content_max_width_px,
+            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
         }
     }
 
@@ -662,8 +683,8 @@ mod tests {
     use super::AppController;
     use crate::document::{DocumentLoader, SourceDocument};
     use crate::errors::ViewerError;
-use crate::html_shell::{HtmlShell, ShellModel};
-    use crate::markdown::MarkdownRenderer;
+    use crate::html_shell::{HtmlShell, ShellModel};
+    use crate::markdown::{MarkdownRenderOptions, MarkdownRenderer};
     use crate::platform::{FileDialog, FontDialog, FontDialogResult, OpenFileResult};
     use crate::sciter::window::{ViewerCommand, ViewerUi};
     use crate::settings::{
@@ -1590,6 +1611,12 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert_eq!(loader.load_count(), 1);
         assert_eq!(renderer.render_count(), 1);
         assert_eq!(
+            renderer.render_options(),
+            vec![MarkdownRenderOptions {
+                cjk_friendly_emphasis: true,
+            }]
+        );
+        assert_eq!(
             controller
                 .state()
                 .current_document()
@@ -2208,6 +2235,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: 980,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -2233,6 +2261,56 @@ use crate::html_shell::{HtmlShell, ShellModel};
         assert!(
             !initial_html.contains("max-width: 1040px;"),
             "default max-width should be replaced when setting is present"
+        );
+    }
+
+    #[test]
+    fn open_file_uses_cjk_emphasis_flag_from_settings_file() {
+        let dir = unique_test_dir("cjk-emphasis-setting-open-flow");
+        fs::create_dir_all(dir.as_ref()).expect("create test dir");
+        let settings_path = dir.join("settings.json");
+        SettingsFile::with_path(settings_path.clone())
+            .save(&Settings {
+                theme: ThemePreference::Light,
+                body_font: None,
+                external_editor: None,
+                recent_files: vec![],
+                window_geometry: None,
+                content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: false,
+            })
+            .expect("save test settings");
+
+        let selected_path = PathBuf::from(r"C:\docs\guide.md");
+        let source = SourceDocument {
+            path: selected_path.clone(),
+            file_name: "guide.md".to_string(),
+            base_dir: PathBuf::from(r"C:\docs"),
+            markdown: "__太字__はテスト".to_string(),
+        };
+        let rendered = RenderedDocument {
+            path: selected_path.clone(),
+            file_name: "guide.md".to_string(),
+            base_dir: PathBuf::from(r"C:\docs"),
+            html_body: "<p>dummy</p>".to_string(),
+        };
+        let dialog = StubFileDialog::selected(selected_path);
+        let loader = StubDocumentLoader::new(vec![Ok(source)]);
+        let renderer = StubMarkdownRenderer::new(vec![Ok(rendered)]);
+        let shell = RecordingHtmlShell::new(vec![Ok("<html>document</html>".to_string())]);
+        let ui = RecordingViewerUi::default();
+        let mut controller = AppController::new(dialog, loader, renderer.clone(), shell, ui)
+            .with_settings_file(SettingsFile::with_path(settings_path));
+
+        controller
+            .handle_viewer_command(ViewerCommand::OpenFileRequested)
+            .expect("open file should succeed");
+
+        assert_eq!(
+            renderer.render_options(),
+            vec![MarkdownRenderOptions {
+                cjk_friendly_emphasis: false,
+            }]
         );
     }
 
@@ -2596,6 +2674,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -2665,6 +2744,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -2714,6 +2794,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -2754,6 +2835,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -3078,6 +3160,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
     struct StubMarkdownRenderer {
         results: Rc<RefCell<Vec<Result<RenderedDocument, ViewerError>>>>,
         render_count: Rc<RefCell<usize>>,
+        render_options: Rc<RefCell<Vec<MarkdownRenderOptions>>>,
     }
 
     impl StubMarkdownRenderer {
@@ -3085,17 +3168,27 @@ use crate::html_shell::{HtmlShell, ShellModel};
             Self {
                 results: Rc::new(RefCell::new(results)),
                 render_count: Rc::new(RefCell::new(0)),
+                render_options: Rc::new(RefCell::new(Vec::new())),
             }
         }
 
         fn render_count(&self) -> usize {
             *self.render_count.borrow()
         }
+
+        fn render_options(&self) -> Vec<MarkdownRenderOptions> {
+            self.render_options.borrow().clone()
+        }
     }
 
     impl MarkdownRenderer for StubMarkdownRenderer {
-        fn render(&self, _source: &SourceDocument) -> Result<RenderedDocument, ViewerError> {
+        fn render(
+            &self,
+            _source: &SourceDocument,
+            options: MarkdownRenderOptions,
+        ) -> Result<RenderedDocument, ViewerError> {
             *self.render_count.borrow_mut() += 1;
+            self.render_options.borrow_mut().push(options);
             self.results.borrow_mut().remove(0)
         }
     }
@@ -3981,6 +4074,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save test settings");
 
@@ -4300,6 +4394,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save settings");
 
@@ -4384,6 +4479,7 @@ use crate::html_shell::{HtmlShell, ShellModel};
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: true,
             })
             .expect("save initial settings");
         let dialog = StubFileDialog::with_editor_pick(OpenFileResult::Cancelled);
