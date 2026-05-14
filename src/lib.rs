@@ -35,6 +35,7 @@ pub use errors::{StartupError, ViewerError};
 pub use html_shell::{DefaultHtmlShell, HtmlShell, ShellModel};
 pub use markdown::{
     ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderOptions, MarkdownRenderer,
+    DEFAULT_CJK_FRIENDLY_EMPHASIS,
 };
 pub use platform::{
     FileDialog, FontDialog, FontDialogResult, OpenFileResult, WindowChromeController,

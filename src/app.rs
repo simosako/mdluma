@@ -337,7 +337,7 @@ where
 
         let rendered = match self
             .renderer
-            .render(&source, self.markdown_render_options())
+            .render_with_options(&source, self.markdown_render_options())
         {
             Ok(rendered) => rendered,
             Err(error) => {
@@ -362,7 +362,7 @@ where
 
         let rendered = match self
             .renderer
-            .render(&source, self.markdown_render_options())
+            .render_with_options(&source, self.markdown_render_options())
         {
             Ok(rendered) => rendered,
             Err(error) => {
@@ -3182,7 +3182,7 @@ mod tests {
     }
 
     impl MarkdownRenderer for StubMarkdownRenderer {
-        fn render(
+        fn render_with_options(
             &self,
             _source: &SourceDocument,
             options: MarkdownRenderOptions,

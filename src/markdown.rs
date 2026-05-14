@@ -1,6 +1,8 @@
 use crate::{RenderedDocument, SourceDocument, ViewerError};
 use comrak::{markdown_to_html, Options};
 
+pub const DEFAULT_CJK_FRIENDLY_EMPHASIS: bool = true;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarkdownRenderOptions {
     pub cjk_friendly_emphasis: bool,
@@ -9,13 +11,17 @@ pub struct MarkdownRenderOptions {
 impl Default for MarkdownRenderOptions {
     fn default() -> Self {
         Self {
-            cjk_friendly_emphasis: true,
+            cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
         }
     }
 }
 
 pub trait MarkdownRenderer {
-    fn render(
+    fn render(&self, source: &SourceDocument) -> Result<RenderedDocument, ViewerError> {
+        self.render_with_options(source, MarkdownRenderOptions::default())
+    }
+
+    fn render_with_options(
         &self,
         source: &SourceDocument,
         options: MarkdownRenderOptions,
@@ -42,12 +48,13 @@ impl MarkdownOptions {
 }
 
 impl MarkdownRenderer for ComrakMarkdownRenderer {
-    fn render(
+    fn render_with_options(
         &self,
         source: &SourceDocument,
         options: MarkdownRenderOptions,
     ) -> Result<RenderedDocument, ViewerError> {
-        let mut html_body = markdown_to_html(&source.markdown, &MarkdownOptions::gfm_viewer(options));
+        let mut html_body =
+            markdown_to_html(&source.markdown, &MarkdownOptions::gfm_viewer(options));
 
         // Remove trailing newlines in code blocks that cause visual gaps in Sciter
         html_body = html_body.replace("\n</code></pre>", "</code></pre>");
@@ -63,9 +70,7 @@ impl MarkdownRenderer for ComrakMarkdownRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderOptions, MarkdownRenderer,
-    };
+    use super::{ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderOptions, MarkdownRenderer};
     use crate::SourceDocument;
     use std::path::PathBuf;
 
@@ -100,7 +105,7 @@ mod tests {
         );
 
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("render GFM markdown");
 
         assert_eq!(rendered.file_name, "guide.md");
@@ -121,7 +126,7 @@ mod tests {
         let source = source_document("unsafe.md", "before <script>alert(1)</script> after");
 
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("render raw HTML with tagfilter");
 
         assert!(rendered.html_body.contains("&lt;script"));
@@ -132,7 +137,7 @@ mod tests {
     fn rendered_document_preserves_source_path_identity() {
         let source = source_document("notes.md", "# Notes");
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("render preserves path");
 
         assert_eq!(rendered.path, source.path);
@@ -144,7 +149,7 @@ mod tests {
     fn rendered_document_preserves_base_dir_through_rendering() {
         let source = source_document("index.md", "# Home");
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("render preserves base_dir");
 
         assert_eq!(rendered.base_dir, source.base_dir);
@@ -159,7 +164,7 @@ mod tests {
         );
 
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("malformed markdown should render best-effort HTML");
 
         assert_eq!(rendered.file_name, "broken.md");
@@ -175,7 +180,7 @@ mod tests {
         );
 
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("unsupported syntax should still render");
 
         assert!(rendered.html_body.contains("Paragraph with a footnote"));
@@ -187,13 +192,10 @@ mod tests {
 
     #[test]
     fn renders_cjk_underscore_emphasis_by_default() {
-        let source = source_document(
-            "ja.md",
-            "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._",
-        );
+        let source = source_document("ja.md", "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._");
 
         let rendered = ComrakMarkdownRenderer
-            .render(&source, MarkdownRenderOptions::default())
+            .render(&source)
             .expect("render CJK underscore emphasis");
 
         assert!(
@@ -214,13 +216,10 @@ mod tests {
 
     #[test]
     fn can_disable_cjk_underscore_emphasis_per_render() {
-        let source = source_document(
-            "ja.md",
-            "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._",
-        );
+        let source = source_document("ja.md", "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._");
 
         let rendered = ComrakMarkdownRenderer
-            .render(
+            .render_with_options(
                 &source,
                 MarkdownRenderOptions {
                     cjk_friendly_emphasis: false,
@@ -228,9 +227,7 @@ mod tests {
             )
             .expect("render without CJK underscore emphasis");
 
-        assert!(rendered
-            .html_body
-            .contains("“︁Git”︁__Hub__"));
+        assert!(rendered.html_body.contains("“︁Git”︁__Hub__"));
         assert!(rendered
             .html_body
             .contains("简体字 / 新字体。︀_Simplified._"));

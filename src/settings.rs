@@ -3,11 +3,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::errors::ViewerError;
+pub use crate::markdown::DEFAULT_CJK_FRIENDLY_EMPHASIS;
 use crate::ui::Theme;
 use crate::APP_NAME;
 
 pub const DEFAULT_CONTENT_MAX_WIDTH_PX: u16 = 1040;
-pub const DEFAULT_CJK_FRIENDLY_EMPHASIS: bool = true;
 const MIN_CONTENT_MAX_WIDTH_PX: u16 = 640;
 const MAX_CONTENT_MAX_WIDTH_PX: u16 = 2400;
 

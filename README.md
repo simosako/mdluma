@@ -85,11 +85,13 @@ Most settings can be changed through the application UI — there is generally n
 - `content_max_width_px`: controls the maximum content width in pixels (default: `1040`, valid range: `640`-`2400`)
 - `cjk_friendly_emphasis`: enables Comrak's CJK-friendly emphasis parsing by default for cases such as `注意：__注意事項__`; set it to `false` if you want stricter CommonMark/GFM-compatible underscore parsing
 
-If you need to adjust them, add or modify lines like these in `settings.json`:
+If you need to adjust them, add or modify entries like these in `settings.json`:
 
 ```json
-"content_max_width_px": 1100,
-"cjk_friendly_emphasis": false
+{
+  "content_max_width_px": 1100,
+  "cjk_friendly_emphasis": false
+}
 ```
 
 ## Tech Stack
