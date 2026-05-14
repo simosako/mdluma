@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::errors::ViewerError;
+pub use crate::markdown::DEFAULT_CJK_FRIENDLY_EMPHASIS;
 use crate::ui::Theme;
 use crate::APP_NAME;
 
@@ -86,6 +87,10 @@ fn default_content_max_width_px() -> u16 {
     DEFAULT_CONTENT_MAX_WIDTH_PX
 }
 
+fn default_cjk_friendly_emphasis() -> bool {
+    DEFAULT_CJK_FRIENDLY_EMPHASIS
+}
+
 fn normalize_content_max_width_px(px: u16) -> u16 {
     if (MIN_CONTENT_MAX_WIDTH_PX..=MAX_CONTENT_MAX_WIDTH_PX).contains(&px) {
         px
@@ -96,6 +101,10 @@ fn normalize_content_max_width_px(px: u16) -> u16 {
 
 fn is_default_content_max_width_px(px: &u16) -> bool {
     *px == DEFAULT_CONTENT_MAX_WIDTH_PX
+}
+
+fn is_default_cjk_friendly_emphasis(value: &bool) -> bool {
+    *value == DEFAULT_CJK_FRIENDLY_EMPHASIS
 }
 
 fn deserialize_content_max_width_px<'de, D>(deserializer: D) -> Result<u16, D::Error>
@@ -142,6 +151,11 @@ pub struct Settings {
         skip_serializing_if = "is_default_content_max_width_px"
     )]
     pub content_max_width_px: u16,
+    #[serde(
+        default = "default_cjk_friendly_emphasis",
+        skip_serializing_if = "is_default_cjk_friendly_emphasis"
+    )]
+    pub cjk_friendly_emphasis: bool,
 }
 
 impl Default for Settings {
@@ -153,6 +167,7 @@ impl Default for Settings {
             recent_files: Vec::new(),
             window_geometry: None,
             content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+            cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
         }
     }
 }
@@ -263,7 +278,7 @@ fn settings_file_path(local_app_data: Option<PathBuf>, temp_dir: PathBuf) -> Pat
 mod tests {
     use super::{
         settings_file_path, BodyFontSettings, Settings, SettingsFile, ThemePreference,
-        DEFAULT_CONTENT_MAX_WIDTH_PX,
+        DEFAULT_CJK_FRIENDLY_EMPHASIS, DEFAULT_CONTENT_MAX_WIDTH_PX,
     };
     use crate::errors::ViewerError;
     use crate::test_util::unique_test_dir;
@@ -313,6 +328,14 @@ mod tests {
     #[test]
     fn settings_default_content_max_width_px_is_1040() {
         assert_eq!(Settings::default().content_max_width_px, 1040);
+    }
+
+    #[test]
+    fn settings_default_cjk_friendly_emphasis_is_enabled() {
+        assert_eq!(
+            Settings::default().cjk_friendly_emphasis,
+            DEFAULT_CJK_FRIENDLY_EMPHASIS
+        );
     }
 
     #[test]
@@ -375,6 +398,7 @@ mod tests {
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
             })
             .expect("save settings");
 
@@ -441,6 +465,17 @@ mod tests {
         assert_eq!(settings.theme, ThemePreference::Light);
         assert_eq!(settings.body_font, None);
         assert_eq!(settings.content_max_width_px, DEFAULT_CONTENT_MAX_WIDTH_PX);
+        assert_eq!(
+            settings.cjk_friendly_emphasis,
+            DEFAULT_CJK_FRIENDLY_EMPHASIS
+        );
+    }
+
+    #[test]
+    fn settings_deserializes_cjk_friendly_emphasis_when_present() {
+        let json = r#"{"theme":"light","cjk_friendly_emphasis":false}"#;
+        let settings: Settings = serde_json::from_str(json).expect("parse settings with CJK flag");
+        assert!(!settings.cjk_friendly_emphasis);
     }
 
     #[test]
@@ -514,6 +549,7 @@ mod tests {
             recent_files: vec![],
             window_geometry: None,
             content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+            cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -539,6 +575,7 @@ mod tests {
                 recent_files: vec![],
                 window_geometry: None,
                 content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+                cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
             })
             .expect("save settings");
 
@@ -559,6 +596,10 @@ mod tests {
         let loaded = SettingsFile::with_path(path).load();
         assert_eq!(loaded.theme, ThemePreference::Dark);
         assert_eq!(loaded.body_font, None);
+        assert_eq!(
+            loaded.cjk_friendly_emphasis,
+            DEFAULT_CJK_FRIENDLY_EMPHASIS
+        );
     }
 
     #[test]
@@ -619,6 +660,7 @@ mod tests {
             recent_files: vec![],
             window_geometry: None,
             content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+            cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
         };
         settings_file.save(&save_settings).expect("save settings");
 
@@ -642,6 +684,7 @@ mod tests {
             recent_files: vec![],
             window_geometry: None,
             content_max_width_px: DEFAULT_CONTENT_MAX_WIDTH_PX,
+            cjk_friendly_emphasis: false,
         };
         settings_file.save(&save_settings).expect("save settings");
 

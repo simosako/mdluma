@@ -1,8 +1,31 @@
 use crate::{RenderedDocument, SourceDocument, ViewerError};
 use comrak::{markdown_to_html, Options};
 
+pub const DEFAULT_CJK_FRIENDLY_EMPHASIS: bool = true;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkdownRenderOptions {
+    pub cjk_friendly_emphasis: bool,
+}
+
+impl Default for MarkdownRenderOptions {
+    fn default() -> Self {
+        Self {
+            cjk_friendly_emphasis: DEFAULT_CJK_FRIENDLY_EMPHASIS,
+        }
+    }
+}
+
 pub trait MarkdownRenderer {
-    fn render(&self, source: &SourceDocument) -> Result<RenderedDocument, ViewerError>;
+    fn render(&self, source: &SourceDocument) -> Result<RenderedDocument, ViewerError> {
+        self.render_with_options(source, MarkdownRenderOptions::default())
+    }
+
+    fn render_with_options(
+        &self,
+        source: &SourceDocument,
+        options: MarkdownRenderOptions,
+    ) -> Result<RenderedDocument, ViewerError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -11,21 +34,27 @@ pub struct ComrakMarkdownRenderer;
 pub struct MarkdownOptions;
 
 impl MarkdownOptions {
-    pub fn gfm_viewer() -> Options<'static> {
+    pub fn gfm_viewer(render_options: MarkdownRenderOptions) -> Options<'static> {
         let mut options = Options::default();
         options.extension.table = true;
         options.extension.strikethrough = true;
         options.extension.autolink = true;
         options.extension.tasklist = true;
         options.extension.tagfilter = true;
+        options.extension.cjk_friendly_emphasis = render_options.cjk_friendly_emphasis;
         options.render.r#unsafe = true; // required for raw HTML in markdown; sanitized downstream by sanitize_body_html()
         options
     }
 }
 
 impl MarkdownRenderer for ComrakMarkdownRenderer {
-    fn render(&self, source: &SourceDocument) -> Result<RenderedDocument, ViewerError> {
-        let mut html_body = markdown_to_html(&source.markdown, &MarkdownOptions::gfm_viewer());
+    fn render_with_options(
+        &self,
+        source: &SourceDocument,
+        options: MarkdownRenderOptions,
+    ) -> Result<RenderedDocument, ViewerError> {
+        let mut html_body =
+            markdown_to_html(&source.markdown, &MarkdownOptions::gfm_viewer(options));
 
         // Remove trailing newlines in code blocks that cause visual gaps in Sciter
         html_body = html_body.replace("\n</code></pre>", "</code></pre>");
@@ -41,21 +70,31 @@ impl MarkdownRenderer for ComrakMarkdownRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderer};
+    use super::{ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderOptions, MarkdownRenderer};
     use crate::SourceDocument;
     use std::path::PathBuf;
 
     #[test]
     fn gfm_viewer_options_enable_only_required_gfm_extensions() {
-        let options = MarkdownOptions::gfm_viewer();
+        let options = MarkdownOptions::gfm_viewer(MarkdownRenderOptions::default());
 
         assert!(options.extension.table);
         assert!(options.extension.strikethrough);
         assert!(options.extension.autolink);
         assert!(options.extension.tasklist);
         assert!(options.extension.tagfilter);
+        assert!(options.extension.cjk_friendly_emphasis);
         assert!(!options.extension.footnotes);
         assert!(!options.extension.description_lists);
+    }
+
+    #[test]
+    fn gfm_viewer_options_can_disable_cjk_friendly_emphasis() {
+        let options = MarkdownOptions::gfm_viewer(MarkdownRenderOptions {
+            cjk_friendly_emphasis: false,
+        });
+
+        assert!(!options.extension.cjk_friendly_emphasis);
     }
 
     #[test]
@@ -149,6 +188,49 @@ mod tests {
         assert!(rendered
             .html_body
             .contains("Footnotes stay readable even when unsupported."));
+    }
+
+    #[test]
+    fn renders_cjk_underscore_emphasis_by_default() {
+        let source = source_document("ja.md", "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._");
+
+        let rendered = ComrakMarkdownRenderer
+            .render(&source)
+            .expect("render CJK underscore emphasis");
+
+        assert!(
+            rendered
+                .html_body
+                .contains("<p>“︁Git”︁<strong>Hub</strong></p>"),
+            "{}",
+            rendered.html_body
+        );
+        assert!(
+            rendered
+                .html_body
+                .contains("<p>简体字 / 新字体。︀<em>Simplified.</em></p>"),
+            "{}",
+            rendered.html_body
+        );
+    }
+
+    #[test]
+    fn can_disable_cjk_underscore_emphasis_per_render() {
+        let source = source_document("ja.md", "“︁Git”︁__Hub__\n\n简体字 / 新字体。︀_Simplified._");
+
+        let rendered = ComrakMarkdownRenderer
+            .render_with_options(
+                &source,
+                MarkdownRenderOptions {
+                    cjk_friendly_emphasis: false,
+                },
+            )
+            .expect("render without CJK underscore emphasis");
+
+        assert!(rendered.html_body.contains("“︁Git”︁__Hub__"));
+        assert!(rendered
+            .html_body
+            .contains("简体字 / 新字体。︀_Simplified._"));
     }
 
     fn source_document(file_name: &str, markdown: &str) -> SourceDocument {

@@ -80,10 +80,18 @@ This approach allows for patch and build number differences while ensuring API-l
 
 Settings are stored in `%LOCALAPPDATA%\MDLuma\settings.json` (typically `C:\Users\<user>\AppData\Local\MDLuma\settings.json`).
 
-Most settings can be changed through the application UI — there is generally no need to edit the file directly. The only exception is `content_max_width_px`, which controls the maximum content width in pixels (default: `1040`, valid range: 640–2400). If you need to adjust it, add or modify the following line in `settings.json`:
+Most settings can be changed through the application UI — there is generally no need to edit the file directly. The main exceptions are:
+
+- `content_max_width_px`: controls the maximum content width in pixels (default: `1040`, valid range: `640`-`2400`)
+- `cjk_friendly_emphasis`: enables Comrak's CJK-friendly emphasis parsing by default for cases such as `注意：__注意事項__`; set it to `false` if you want stricter CommonMark/GFM-compatible underscore parsing
+
+If you need to adjust them, add or modify entries like these in `settings.json`:
 
 ```json
-"content_max_width_px": 1100
+{
+  "content_max_width_px": 1100,
+  "cjk_friendly_emphasis": false
+}
 ```
 
 ## Tech Stack

@@ -33,7 +33,10 @@ pub use app::{RenderedDocument, ViewerState, APP_NAME};
 pub use document::{DocumentLoader, FileDocumentLoader, SourceDocument};
 pub use errors::{StartupError, ViewerError};
 pub use html_shell::{DefaultHtmlShell, HtmlShell, ShellModel};
-pub use markdown::{ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderer};
+pub use markdown::{
+    ComrakMarkdownRenderer, MarkdownOptions, MarkdownRenderOptions, MarkdownRenderer,
+    DEFAULT_CJK_FRIENDLY_EMPHASIS,
+};
 pub use platform::{
     FileDialog, FontDialog, FontDialogResult, OpenFileResult, WindowChromeController,
     WindowChromeState, WindowsFileDialog, WindowsFontDialog, WindowsWindowChrome,
