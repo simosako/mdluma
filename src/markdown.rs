@@ -1,5 +1,7 @@
 use crate::{RenderedDocument, SourceDocument, ViewerError};
-use comrak::{markdown_to_html, Options};
+use comrak::plugins::syntect::SyntectAdapterBuilder;
+use comrak::{markdown_to_html_with_plugins, options::Plugins, Options};
+use std::sync::OnceLock;
 
 pub const DEFAULT_CJK_FRIENDLY_EMPHASIS: bool = true;
 
@@ -54,11 +56,25 @@ impl MarkdownRenderer for ComrakMarkdownRenderer {
         source: &SourceDocument,
         options: MarkdownRenderOptions,
     ) -> Result<RenderedDocument, ViewerError> {
-        let mut html_body =
-            markdown_to_html(&source.markdown, &MarkdownOptions::gfm_viewer(options));
+        static SYNTECT_ADAPTER: OnceLock<comrak::plugins::syntect::SyntectAdapter> =
+            OnceLock::new();
+        let adapter = SYNTECT_ADAPTER
+            .get_or_init(|| SyntectAdapterBuilder::new().theme("base16-ocean.dark").build());
 
-        // Remove trailing newlines in code blocks that cause visual gaps in Sciter
+        let mut plugins = Plugins::default();
+        plugins.render.codefence_syntax_highlighter = Some(adapter);
+
+        let mut html_body = markdown_to_html_with_plugins(
+            &source.markdown,
+            &MarkdownOptions::gfm_viewer(options),
+            &plugins,
+        );
+
+        // Remove trailing newlines in code blocks that cause visual gaps in Sciter.
+        // Without syntax highlighting, comrak emits \n directly before </code></pre>.
+        // With syntect highlighting, the trailing newline is inside the last token span.
         html_body = html_body.replace("\n</code></pre>", "</code></pre>");
+        html_body = html_body.replace("\n</span></code></pre>", "</span></code></pre>");
 
         Ok(RenderedDocument {
             path: source.path.clone(),
@@ -233,6 +249,44 @@ mod tests {
         assert!(rendered
             .html_body
             .contains("简体字 / 新字体。︀_Simplified._"));
+    }
+
+    #[test]
+    fn fenced_code_block_with_language_produces_syntax_highlighted_spans() {
+        let source = source_document("code.md", "```rust\nfn main() {}\n```");
+
+        let rendered = ComrakMarkdownRenderer
+            .render(&source)
+            .expect("render fenced code block with language");
+
+        // Syntect highlighting wraps tokens in spans with inline color styles
+        assert!(
+            rendered.html_body.contains("<span style="),
+            "highlighted code should contain styled spans, got: {}",
+            rendered.html_body
+        );
+        assert!(
+            rendered.html_body.contains("fn") && rendered.html_body.contains("main"),
+            "code content should be preserved"
+        );
+    }
+
+    #[test]
+    fn fenced_code_block_without_language_renders_plain_code() {
+        let source = source_document("code.md", "```\nplain text block\n```");
+
+        let rendered = ComrakMarkdownRenderer
+            .render(&source)
+            .expect("render fenced code block without language");
+
+        assert!(
+            rendered.html_body.contains("plain text block"),
+            "plain code content should be preserved"
+        );
+        assert!(
+            rendered.html_body.contains("<pre>") || rendered.html_body.contains("<pre "),
+            "code should be wrapped in pre element"
+        );
     }
 
     fn source_document(file_name: &str, markdown: &str) -> SourceDocument {

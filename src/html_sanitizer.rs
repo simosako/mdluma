@@ -238,6 +238,7 @@ fn sanitize_tag(tag: &str, base_dir: Option<&std::path::Path>) -> String {
             continue;
         }
 
+        let len_before_attr = sanitized.len();
         sanitized.push(' ');
         sanitized.push_str(name);
 
@@ -249,6 +250,13 @@ fn sanitize_tag(tag: &str, base_dir: Option<&std::path::Path>) -> String {
                     if let Some(resolved) = resolve_relative_resource_to_file_url(value, base_dir) {
                         sanitized_value = resolved;
                     }
+                }
+            }
+            if tag_name.eq_ignore_ascii_case("span") && name.eq_ignore_ascii_case("style") {
+                sanitized_value = filter_safe_highlight_style(&sanitized_value);
+                if sanitized_value.is_empty() {
+                    sanitized.truncate(len_before_attr);
+                    continue;
                 }
             }
             if tag_name.eq_ignore_ascii_case("input") && name.eq_ignore_ascii_case("type") {
@@ -367,6 +375,7 @@ fn is_allowed_render_body_attribute(tag_name: &str, attribute: &str) -> bool {
                 || attribute.eq_ignore_ascii_case("disabled")
         }
         "ol" => attribute.eq_ignore_ascii_case("start"),
+        "span" => attribute.eq_ignore_ascii_case("style"),
         "td" | "th" => {
             attribute.eq_ignore_ascii_case("colspan")
                 || attribute.eq_ignore_ascii_case("rowspan")
@@ -451,6 +460,32 @@ fn is_safe_external_url(value: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
+/// Filters a CSS style attribute value to only the properties used by syntax highlighting.
+/// Only `color`, `background-color`, `font-style`, and `font-weight` are retained,
+/// blocking any potentially dangerous CSS (e.g. positioning, content injection).
+fn filter_safe_highlight_style(style: &str) -> String {
+    let mut filtered = String::with_capacity(style.len());
+    for decl in style.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        let Some((property, _value)) = decl.split_once(':') else {
+            continue;
+        };
+        match property.trim().to_ascii_lowercase().as_str() {
+            "color" | "background-color" | "font-style" | "font-weight" => {
+                if !filtered.is_empty() {
+                    filtered.push(';');
+                }
+                filtered.push_str(decl);
+            }
+            _ => {}
+        }
+    }
+    filtered
+}
+
 fn encode_file_url_path(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -499,4 +534,112 @@ fn escape_html(value: &str) -> String {
         }
     }
     escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{filter_safe_highlight_style, sanitize_body_html};
+
+    #[test]
+    fn span_style_color_passes_through_sanitizer() {
+        // Syntect-generated style values have a trailing semicolon; the filter removes it.
+        let html = r#"<span style="color:#b48ead;">fn</span>"#;
+        let result = sanitize_body_html(html, None);
+        // style is kept, trailing semicolon stripped by filter
+        assert_eq!(result, r#"<span style="color:#b48ead">fn</span>"#);
+    }
+
+    #[test]
+    fn span_style_background_color_passes_through_sanitizer() {
+        let html = r#"<span style="background-color:#2b303b;color:#c0c5ce;">text</span>"#;
+        let result = sanitize_body_html(html, None);
+        assert_eq!(
+            result,
+            r#"<span style="background-color:#2b303b;color:#c0c5ce">text</span>"#
+        );
+    }
+
+    #[test]
+    fn span_style_with_dangerous_property_is_stripped() {
+        let html = r#"<span style="position:fixed;top:0;left:0;">overlay</span>"#;
+        let result = sanitize_body_html(html, None);
+        assert!(!result.contains("position"), "dangerous CSS should be stripped");
+        assert!(!result.contains("fixed"), "dangerous CSS value should be stripped");
+    }
+
+    #[test]
+    fn span_style_with_all_dangerous_properties_removes_style_attribute() {
+        let html = r#"<span style="position:fixed;">overlay</span>"#;
+        let result = sanitize_body_html(html, None);
+        assert!(!result.contains("style="), "style attribute should be removed when all properties are unsafe");
+        assert!(result.contains("<span>"), "span element itself should be kept");
+    }
+
+    #[test]
+    fn span_style_mixes_safe_and_unsafe_properties_retains_safe_only() {
+        let html = r#"<span style="color:#abc;position:fixed;font-style:italic;">text</span>"#;
+        let result = sanitize_body_html(html, None);
+        assert!(result.contains("color:#abc"), "safe color property should pass");
+        assert!(result.contains("font-style:italic"), "safe font-style property should pass");
+        assert!(!result.contains("position"), "dangerous position property should be stripped");
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_allows_color() {
+        assert_eq!(filter_safe_highlight_style("color:#c0c5ce"), "color:#c0c5ce");
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_allows_background_color() {
+        assert_eq!(
+            filter_safe_highlight_style("background-color:#2b303b"),
+            "background-color:#2b303b"
+        );
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_allows_font_style() {
+        assert_eq!(
+            filter_safe_highlight_style("font-style:italic"),
+            "font-style:italic"
+        );
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_allows_font_weight() {
+        assert_eq!(
+            filter_safe_highlight_style("font-weight:bold"),
+            "font-weight:bold"
+        );
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_strips_dangerous_properties() {
+        assert_eq!(filter_safe_highlight_style("position:fixed"), "");
+        assert_eq!(filter_safe_highlight_style("display:none"), "");
+        assert_eq!(filter_safe_highlight_style("content:attr(data-x)"), "");
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_handles_multiple_declarations() {
+        let input = "color:#abc;font-style:italic;position:fixed;font-weight:bold";
+        let result = filter_safe_highlight_style(input);
+        assert!(result.contains("color:#abc"));
+        assert!(result.contains("font-style:italic"));
+        assert!(result.contains("font-weight:bold"));
+        assert!(!result.contains("position"));
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_handles_empty_input() {
+        assert_eq!(filter_safe_highlight_style(""), "");
+    }
+
+    #[test]
+    fn filter_safe_highlight_style_ignores_malformed_declarations() {
+        // declarations without ':' separator are silently dropped
+        assert_eq!(filter_safe_highlight_style("malformed"), "");
+        // valid followed by malformed
+        assert_eq!(filter_safe_highlight_style("color:red;malformed"), "color:red");
+    }
 }
