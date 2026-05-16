@@ -5,6 +5,11 @@ use std::sync::OnceLock;
 
 pub const DEFAULT_CJK_FRIENDLY_EMPHASIS: bool = true;
 
+/// Syntect theme used for syntax highlighting in code fences.
+/// Both the light and dark UI themes use a dark background for code blocks, so
+/// a single dark theme is applied consistently across both viewer modes.
+const SYNTAX_HIGHLIGHT_THEME: &str = "base16-ocean.dark";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarkdownRenderOptions {
     pub cjk_friendly_emphasis: bool,
@@ -59,7 +64,7 @@ impl MarkdownRenderer for ComrakMarkdownRenderer {
         static SYNTECT_ADAPTER: OnceLock<comrak::plugins::syntect::SyntectAdapter> =
             OnceLock::new();
         let adapter = SYNTECT_ADAPTER
-            .get_or_init(|| SyntectAdapterBuilder::new().theme("base16-ocean.dark").build());
+            .get_or_init(|| SyntectAdapterBuilder::new().theme(SYNTAX_HIGHLIGHT_THEME).build());
 
         let mut plugins = Plugins::default();
         plugins.render.codefence_syntax_highlighter = Some(adapter);

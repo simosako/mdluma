@@ -253,6 +253,8 @@ fn sanitize_tag(tag: &str, base_dir: Option<&std::path::Path>) -> String {
                 }
             }
             if tag_name.eq_ignore_ascii_case("span") && name.eq_ignore_ascii_case("style") {
+                // Style on <span> is allowed exclusively for syntax highlighting (syntect output).
+                // Filter to safe color/font properties only to block CSS injection.
                 sanitized_value = filter_safe_highlight_style(&sanitized_value);
                 if sanitized_value.is_empty() {
                     sanitized.truncate(len_before_attr);
@@ -460,9 +462,16 @@ fn is_safe_external_url(value: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
+/// CSS properties permitted inside a `<span style="...">` from syntax highlighting.
+/// These four properties are all that syntect emits; restricting to this allowlist
+/// prevents injection of positioning, content, or other dangerous declarations.
+const SAFE_SPAN_STYLE_PROPERTIES: &[&str] =
+    &["color", "background-color", "font-style", "font-weight"];
+
 /// Filters a CSS style attribute value to only the properties used by syntax highlighting.
-/// Only `color`, `background-color`, `font-style`, and `font-weight` are retained,
+/// Only properties listed in [`SAFE_SPAN_STYLE_PROPERTIES`] are retained,
 /// blocking any potentially dangerous CSS (e.g. positioning, content injection).
+/// This is applied exclusively to `<span>` elements where syntect places inline color styles.
 fn filter_safe_highlight_style(style: &str) -> String {
     let mut filtered = String::with_capacity(style.len());
     for decl in style.split(';') {
@@ -473,14 +482,12 @@ fn filter_safe_highlight_style(style: &str) -> String {
         let Some((property, _value)) = decl.split_once(':') else {
             continue;
         };
-        match property.trim().to_ascii_lowercase().as_str() {
-            "color" | "background-color" | "font-style" | "font-weight" => {
-                if !filtered.is_empty() {
-                    filtered.push(';');
-                }
-                filtered.push_str(decl);
+        let property_lc = property.trim().to_ascii_lowercase();
+        if SAFE_SPAN_STYLE_PROPERTIES.contains(&property_lc.as_str()) {
+            if !filtered.is_empty() {
+                filtered.push(';');
             }
-            _ => {}
+            filtered.push_str(decl);
         }
     }
     filtered
