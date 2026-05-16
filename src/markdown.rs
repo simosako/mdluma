@@ -41,6 +41,7 @@ impl MarkdownOptions {
         options.extension.autolink = true;
         options.extension.tasklist = true;
         options.extension.tagfilter = true;
+        options.extension.alerts = true;
         options.extension.cjk_friendly_emphasis = render_options.cjk_friendly_emphasis;
         options.render.r#unsafe = true; // required for raw HTML in markdown; sanitized downstream by sanitize_body_html()
         options
@@ -83,6 +84,7 @@ mod tests {
         assert!(options.extension.autolink);
         assert!(options.extension.tasklist);
         assert!(options.extension.tagfilter);
+        assert!(options.extension.alerts);
         assert!(options.extension.cjk_friendly_emphasis);
         assert!(!options.extension.footnotes);
         assert!(!options.extension.description_lists);
@@ -240,5 +242,22 @@ mod tests {
             base_dir: PathBuf::from(r"C:\\docs"),
             markdown: markdown.to_string(),
         }
+    }
+
+    #[test]
+    fn renders_gfm_alert_types_with_alert_classes() {
+        let md = "> [!NOTE]\n> Note content.\n\n> [!TIP]\n> Tip content.\n\n> [!IMPORTANT]\n> Important content.\n\n> [!WARNING]\n> Warning content.\n\n> [!CAUTION]\n> Caution content.\n";
+        let source = source_document("alerts.md", md);
+
+        let rendered = ComrakMarkdownRenderer
+            .render(&source)
+            .expect("render GFM alerts");
+
+        assert!(rendered.html_body.contains("markdown-alert-note"));
+        assert!(rendered.html_body.contains("markdown-alert-tip"));
+        assert!(rendered.html_body.contains("markdown-alert-important"));
+        assert!(rendered.html_body.contains("markdown-alert-warning"));
+        assert!(rendered.html_body.contains("markdown-alert-caution"));
+        assert!(rendered.html_body.contains("markdown-alert-title"));
     }
 }
