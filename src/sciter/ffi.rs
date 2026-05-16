@@ -1679,6 +1679,9 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     wparam: usize,
     lparam: isize,
 ) -> isize {
+    #[cfg(debug_assertions)]
+    log_wnd_proc_input_message(msg, wparam, lparam);
+
     // Right-clicks on window-caption are handled as non-client messages on Windows.
     // Route this path into JS so recent-files popup behavior stays available even
     // when Sciter does not dispatch DOM contextmenu events for caption elements.
@@ -1760,6 +1763,23 @@ unsafe extern "system" fn deferred_load_wnd_proc(
     } else {
         0
     }
+}
+
+#[cfg(all(windows, debug_assertions))]
+fn log_wnd_proc_input_message(msg: u32, wparam: usize, lparam: isize) {
+    let name = match msg {
+        0x0114 => "WM_HSCROLL",
+        0x0115 => "WM_VSCROLL",
+        0x0207 => "WM_MBUTTONDOWN",
+        0x0208 => "WM_MBUTTONUP",
+        0x020A => "WM_MOUSEWHEEL",
+        0x020E => "WM_MOUSEHWHEEL",
+        0x024E => "WM_POINTERWHEEL",
+        0x024F => "WM_POINTERHWHEEL",
+        _ => return,
+    };
+
+    crate::debug_log!("WndProc: {name} w={wparam:#x} l={lparam:#x}");
 }
 
 #[cfg(windows)]
