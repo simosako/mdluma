@@ -7,9 +7,9 @@ use std::sync::{Mutex, OnceLock};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, GWLP_WNDPROC, GWL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE,
-    WM_DROPFILES, WM_KEYDOWN, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_RESTORE, SW_SHOW, SW_SHOWMINIMIZED, WM_APP, WM_CLOSE, WM_DROPFILES,
+    WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCRBUTTONUP, WM_WINDOWPOSCHANGING, WS_CAPTION, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_SYSMENU,
 };
 
@@ -89,6 +89,8 @@ const SW_CONTROLS: u32 = 1 << 4;
 const WM_DL_DEFERRED_LOAD: u32 = WM_APP + 0x100;
 #[cfg(windows)]
 const HTCAPTION: usize = 2;
+#[cfg(windows)]
+const WHEEL_DELTA: i32 = 120;
 
 const EXTENDED_FRAME_INIT_SCRIPT: &[u8] = b"Window.this.frameType = \"extended\";\0";
 
@@ -1600,6 +1602,9 @@ static mut DL_CAPTURED_GEOMETRY: Option<crate::settings::WindowGeometry> = None;
 static mut DL_POSITION_LOCKED: bool = false;
 
 #[cfg(windows)]
+static mut DL_MOUSE_WHEEL_DELTA_REMAINDER: i32 = 0;
+
+#[cfg(windows)]
 static mut DL_GET_ROOT_ELEMENT_FN: Option<SciterGetRootElementFn> = None;
 
 #[cfg(windows)]
@@ -1755,8 +1760,87 @@ unsafe extern "system" fn deferred_load_wnd_proc(
         }
         return 0;
     }
-    if let Some(original) = std::ptr::read(std::ptr::addr_of!(DL_ORIGINAL_PROC)) {
-        CallWindowProcW(original as isize, hwnd, msg, wparam, lparam)
+
+    if msg == WM_MOUSEWHEEL {
+        return unsafe { dispatch_normalized_mouse_wheel(hwnd, wparam, lparam) };
+    }
+
+    unsafe { call_original_window_proc(hwnd, msg, wparam, lparam) }
+}
+
+#[cfg(windows)]
+unsafe fn dispatch_normalized_mouse_wheel(
+    hwnd: SciterWindowHandle,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
+    let mut remainder =
+        unsafe { std::ptr::read(std::ptr::addr_of!(DL_MOUSE_WHEEL_DELTA_REMAINDER)) };
+
+    let mut result = 0;
+    let dispatched = drain_mouse_wheel_delta(&mut remainder, mouse_wheel_delta(wparam), |delta| {
+        result = unsafe {
+            call_original_window_proc(
+                hwnd,
+                WM_MOUSEWHEEL,
+                mouse_wheel_wparam_with_delta(wparam, delta),
+                lparam,
+            )
+        };
+    });
+
+    unsafe {
+        std::ptr::write(
+            std::ptr::addr_of_mut!(DL_MOUSE_WHEEL_DELTA_REMAINDER),
+            remainder,
+        );
+    }
+
+    if dispatched {
+        result
+    } else {
+        0
+    }
+}
+
+#[cfg(windows)]
+fn mouse_wheel_delta(wparam: usize) -> i32 {
+    ((wparam >> 16) as u16 as i16) as i32
+}
+
+#[cfg(windows)]
+fn mouse_wheel_wparam_with_delta(wparam: usize, delta: i32) -> usize {
+    (wparam & 0xffff) | (((delta as i16 as u16) as usize) << 16)
+}
+
+#[cfg(windows)]
+fn drain_mouse_wheel_delta(remainder: &mut i32, delta: i32, mut dispatch: impl FnMut(i32)) -> bool {
+    *remainder += delta;
+
+    let mut dispatched = false;
+    while *remainder >= WHEEL_DELTA {
+        *remainder -= WHEEL_DELTA;
+        dispatch(WHEEL_DELTA);
+        dispatched = true;
+    }
+    while *remainder <= -WHEEL_DELTA {
+        *remainder += WHEEL_DELTA;
+        dispatch(-WHEEL_DELTA);
+        dispatched = true;
+    }
+
+    dispatched
+}
+
+#[cfg(windows)]
+unsafe fn call_original_window_proc(
+    hwnd: SciterWindowHandle,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
+    if let Some(original) = unsafe { std::ptr::read(std::ptr::addr_of!(DL_ORIGINAL_PROC)) } {
+        unsafe { CallWindowProcW(original as isize, hwnd, msg, wparam, lparam) }
     } else {
         0
     }
@@ -1999,6 +2083,59 @@ mod tests {
         assert_eq!(stripped & (WS_MINIMIZEBOX as isize), 0);
         assert_eq!(stripped & (WS_MAXIMIZEBOX as isize), 0);
         assert_ne!(stripped & 0x00040000isize, 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mouse_wheel_delta_preserves_signed_high_word() {
+        assert_eq!(mouse_wheel_delta(0x0078_0000), 120);
+        assert_eq!(mouse_wheel_delta(0xff88_0000), -120);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mouse_wheel_wparam_with_delta_preserves_low_word_modifiers() {
+        let wparam = mouse_wheel_wparam_with_delta(0x1234_0005, -WHEEL_DELTA);
+
+        assert_eq!(wparam, 0xff88_0005);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mouse_wheel_delta_drain_accumulates_high_precision_steps() {
+        let mut remainder = 0;
+        let mut dispatched = Vec::new();
+
+        assert!(!drain_mouse_wheel_delta(&mut remainder, 56, |delta| {
+            dispatched.push(delta)
+        }));
+        assert_eq!(remainder, 56);
+
+        assert!(drain_mouse_wheel_delta(&mut remainder, 68, |delta| {
+            dispatched.push(delta)
+        }));
+
+        assert_eq!(dispatched, vec![WHEEL_DELTA]);
+        assert_eq!(remainder, 4);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mouse_wheel_delta_drain_accumulates_negative_steps() {
+        let mut remainder = 0;
+        let mut dispatched = Vec::new();
+
+        assert!(!drain_mouse_wheel_delta(&mut remainder, -64, |delta| {
+            dispatched.push(delta)
+        }));
+        assert_eq!(remainder, -64);
+
+        assert!(drain_mouse_wheel_delta(&mut remainder, -60, |delta| {
+            dispatched.push(delta)
+        }));
+
+        assert_eq!(dispatched, vec![-WHEEL_DELTA]);
+        assert_eq!(remainder, -4);
     }
 
     #[test]
