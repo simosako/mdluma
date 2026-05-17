@@ -12,14 +12,11 @@ It focuses on **fast startup and low memory usage** — built compactly with Rus
 
 ## Features
 
-- Renders basic Markdown syntax including tables and hyperlinks
+- Renders CommonMark (Markdown) syntax including tables and hyperlinks
+- GFM extensions (task lists, syntax hightlists, etc.)
 - Dark/Light theme switching
 - External editor integration
 - Font customization and other display settings
-
-## Planned
-
-- Broader Markdown support (GFM extensions, task lists, footnotes, etc.)
 
 ## Building
 
