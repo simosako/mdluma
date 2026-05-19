@@ -76,56 +76,29 @@ pub struct AppController<D, F, L, R, H, U, S = (), E = ()> {
     cjk_friendly_emphasis: bool,
 }
 
-#[cfg(test)]
-impl<D, L, R, H, U> AppController<D, (), L, R, H, U, ()>
-where
-    D: FileDialog,
-    L: DocumentLoader,
-    R: MarkdownRenderer,
-    H: HtmlShell,
-    U: ViewerUi,
-{
-    pub fn new(dialog: D, loader: L, renderer: R, shell: H, ui: U) -> Self {
-        let s = LoadedSettings::from_file(create_test_settings_file());
-        Self {
-            dialog,
-            font_dialog: (),
-            loader,
-            renderer,
-            shell,
-            ui,
-            launcher: (),
-            external_editor_launcher: (),
-            state: ViewerState::NoDocument,
-            theme: s.theme,
-            body_font: s.body_font,
-            external_editor: s.external_editor,
-            recent_files: s.recent_files,
-            settings_file: s.settings_file,
-            window_geometry: s.window_geometry,
-            content_max_width_px: s.content_max_width_px,
-            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
-        }
-    }
-
-    pub fn with_state(
+impl<D, F, L, R, H, U, S, E> AppController<D, F, L, R, H, U, S, E> {
+    fn from_settings_file(
         dialog: D,
+        font_dialog: F,
         loader: L,
         renderer: R,
         shell: H,
         ui: U,
+        launcher: S,
+        external_editor_launcher: E,
         state: ViewerState,
+        settings_file: SettingsFile,
     ) -> Self {
-        let s = LoadedSettings::from_file(create_test_settings_file());
+        let s = LoadedSettings::from_file(settings_file);
         Self {
             dialog,
-            font_dialog: (),
+            font_dialog,
             loader,
             renderer,
             shell,
             ui,
-            launcher: (),
-            external_editor_launcher: (),
+            launcher,
+            external_editor_launcher,
             state,
             theme: s.theme,
             body_font: s.body_font,
@@ -136,6 +109,53 @@ where
             content_max_width_px: s.content_max_width_px,
             cjk_friendly_emphasis: s.cjk_friendly_emphasis,
         }
+    }
+}
+
+#[cfg(test)]
+impl<D, L, R, H, U> AppController<D, (), L, R, H, U, ()>
+where
+    D: FileDialog,
+    L: DocumentLoader,
+    R: MarkdownRenderer,
+    H: HtmlShell,
+    U: ViewerUi,
+{
+    pub fn new(dialog: D, loader: L, renderer: R, shell: H, ui: U) -> Self {
+        Self::from_settings_file(
+            dialog,
+            (),
+            loader,
+            renderer,
+            shell,
+            ui,
+            (),
+            (),
+            ViewerState::NoDocument,
+            create_test_settings_file(),
+        )
+    }
+
+    pub fn with_state(
+        dialog: D,
+        loader: L,
+        renderer: R,
+        shell: H,
+        ui: U,
+        state: ViewerState,
+    ) -> Self {
+        Self::from_settings_file(
+            dialog,
+            (),
+            loader,
+            renderer,
+            shell,
+            ui,
+            (),
+            (),
+            state,
+            create_test_settings_file(),
+        )
     }
 }
 
@@ -482,8 +502,7 @@ where
         launcher: S,
         external_editor_launcher: E,
     ) -> Self {
-        let s = LoadedSettings::from_file(SettingsFile::new());
-        Self {
+        Self::from_settings_file(
             dialog,
             font_dialog,
             loader,
@@ -492,16 +511,9 @@ where
             ui,
             launcher,
             external_editor_launcher,
-            state: ViewerState::NoDocument,
-            theme: s.theme,
-            body_font: s.body_font,
-            external_editor: s.external_editor,
-            recent_files: s.recent_files,
-            settings_file: s.settings_file,
-            window_geometry: s.window_geometry,
-            content_max_width_px: s.content_max_width_px,
-            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
-        }
+            ViewerState::NoDocument,
+            SettingsFile::new(),
+        )
     }
 
     #[cfg(test)]
@@ -528,26 +540,18 @@ where
         external_editor_launcher: E,
         state: ViewerState,
     ) -> Self {
-        let s = LoadedSettings::from_file(create_test_settings_file());
-        Self {
+        Self::from_settings_file(
             dialog,
             font_dialog,
             loader,
             renderer,
             shell,
             ui,
-            launcher: child_launcher,
+            child_launcher,
             external_editor_launcher,
             state,
-            theme: s.theme,
-            body_font: s.body_font,
-            external_editor: s.external_editor,
-            recent_files: s.recent_files,
-            settings_file: s.settings_file,
-            window_geometry: s.window_geometry,
-            content_max_width_px: s.content_max_width_px,
-            cjk_friendly_emphasis: s.cjk_friendly_emphasis,
-        }
+            create_test_settings_file(),
+        )
     }
 
     pub fn open_in_external_editor(&mut self) -> Result<(), ViewerError> {
