@@ -161,6 +161,7 @@ mod tests {
     use super::{EmbeddedUiAssets, IconName, IconTheme, Theme, UiTextAsset};
     use std::fs;
     use std::process::Command;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -780,28 +781,6 @@ global.document = {
 
 eval(scriptSource);
 
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      if (selector === "[data-drag-region]") {
-        return values.dragRegion || null;
-      }
-      return null;
-    },
-  };
-}
-
 const openActionButton = createTarget({ action: "open-file" });
 listeners.click({ target: createTarget({ actionTarget: openActionButton }) });
 buttonListeners.click({ currentTarget: openActionButton });
@@ -864,25 +843,6 @@ global.document = {
 };
 
 eval(scriptSource);
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
 
 const disabledSearch = createTarget({ action: "search", disabled: true });
 listeners.click({ target: createTarget({ actionTarget: disabledSearch }) });
@@ -963,28 +923,6 @@ eval(scriptSource);
 
 if (!delegated.ready || typeof delegated.ready.handler !== "function") {
   throw new Error("expected Sciter ready handler registration");
-}
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      if (selector === "[data-drag-region]") {
-        return values.dragRegion || null;
-      }
-      return null;
-    },
-  };
 }
 
 const closeButton = createTarget({ action: "window-close" });
@@ -2036,28 +1974,6 @@ global.document = {
 
 eval(scriptSource);
 
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      if (selector === "[data-drag-region]") {
-        return values.dragRegion || null;
-      }
-      return null;
-    },
-  };
-}
-
 const themeButton = createTarget({ action: "theme" });
 listeners.click({ target: createTarget({ actionTarget: themeButton }) });
 buttonListeners.click({ currentTarget: themeButton });
@@ -2109,25 +2025,6 @@ global.document = {
 
 eval(scriptSource);
 
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
-
 const themeButton = createTarget({ action: "theme" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: themeButton }));
 
@@ -2177,25 +2074,6 @@ global.document = {
 };
 
 eval(scriptSource);
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
 
 const externalEditorItem = createTarget({ action: "external-editor" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: externalEditorItem }));
@@ -2247,25 +2125,6 @@ global.document = {
 
 eval(scriptSource);
 
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
-
 const disabledThemeButton = createTarget({ action: "theme", disabled: true });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: disabledThemeButton }));
 
@@ -2313,25 +2172,6 @@ global.document = {
 };
 
 eval(scriptSource);
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
 
 const fontButton = createTarget({ action: "font" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: fontButton }));
@@ -2400,25 +2240,6 @@ global.document = {
 
 eval(scriptSource);
 
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
-
 const aboutButton = createTarget({ action: "about" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: aboutButton }));
 
@@ -2481,25 +2302,6 @@ global.document = {
 };
 
 eval(scriptSource);
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
 
 const aboutOkButton = createTarget({ action: "about-ok" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: aboutOkButton }));
@@ -2574,25 +2376,6 @@ global.document = {
 };
 
 eval(scriptSource);
-
-function createTarget(options) {
-  const values = options || {};
-  return {
-    disabled: !!values.disabled,
-    getAttribute(name) {
-      if (name === "data-action") {
-        return values.action || null;
-      }
-      return null;
-    },
-    closest(selector) {
-      if (selector === "[data-action]") {
-        return values.actionTarget || null;
-      }
-      return null;
-    },
-  };
-}
 
 const errorOkTarget = createTarget({ action: "error-ok" });
 globalThis.__mdlumaTestHooks.handleClick(createTarget({ actionTarget: errorOkTarget }));
@@ -3045,9 +2828,38 @@ if (JSON.stringify(dropCall.args) !== JSON.stringify([
         stderr: String,
     }
 
+    const NODE_CREATE_TARGET_HELPER: &str = r#"function createTarget(options) {
+  const values = options || {};
+  return {
+    disabled: !!values.disabled,
+    getAttribute(name) {
+      if (name === "data-action") {
+        return values.action || null;
+      }
+      if (name === "data-recent-index") {
+        return values.recentIndex || null;
+      }
+      return null;
+    },
+    closest(selector) {
+      if (selector === "[data-action]") {
+        return values.actionTarget || null;
+      }
+      if (selector === "[data-drag-region]") {
+        return values.dragRegion || null;
+      }
+      return null;
+    },
+  };
+}
+"#;
+
     fn run_node_assertions(script: &str, assertions: &str) -> NodeRunOutput {
+        static NODE_ASSERTION_RUN_ID: AtomicU64 = AtomicU64::new(0);
+
         let harness = format!(
             r#"const scriptSource = {script:?};
+{NODE_CREATE_TARGET_HELPER}
 {assertions}
 "#
         );
@@ -3058,8 +2870,9 @@ if (JSON.stringify(dropCall.args) !== JSON.stringify([
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
+        let run_id = NODE_ASSERTION_RUN_ID.fetch_add(1, Ordering::Relaxed);
         let script_path =
-            temp_dir.join(format!("ui-assertions-{}-{nonce}.cjs", std::process::id()));
+            temp_dir.join(format!("ui-assertions-{}-{nonce}-{run_id}.cjs", std::process::id()));
         fs::write(&script_path, harness).expect("write node assertion harness");
 
         let output = Command::new("node")
