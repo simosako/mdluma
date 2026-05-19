@@ -31,64 +31,38 @@ pub enum IconName {
     WindowClose,
 }
 
+macro_rules! embedded_svg_match {
+    ($name:expr, $theme:expr, { $($variant:ident => $file_stem:literal),+ $(,)? }) => {
+        match ($name, $theme) {
+            $(
+                (IconName::$variant, IconTheme::Light) => {
+                    include_str!(concat!("../../assets/light/", $file_stem, ".svg"))
+                }
+                (IconName::$variant, IconTheme::Dark) => {
+                    include_str!(concat!("../../assets/dark/", $file_stem, ".svg"))
+                }
+            )+
+        }
+    };
+}
+
 impl IconName {
     fn embedded_svg(self, theme: IconTheme) -> &'static str {
-        match (self, theme) {
-            (Self::App, IconTheme::Light) => include_str!("../../assets/light/app.svg"),
-            (Self::App, IconTheme::Dark) => include_str!("../../assets/dark/app.svg"),
-            (Self::Open, IconTheme::Light) => include_str!("../../assets/light/open.svg"),
-            (Self::Open, IconTheme::Dark) => include_str!("../../assets/dark/open.svg"),
-            (Self::Search, IconTheme::Light) => include_str!("../../assets/light/search.svg"),
-            (Self::Search, IconTheme::Dark) => include_str!("../../assets/dark/search.svg"),
-            (Self::SearchPrev, IconTheme::Light) => {
-                include_str!("../../assets/light/search-prev.svg")
-            }
-            (Self::SearchPrev, IconTheme::Dark) => {
-                include_str!("../../assets/dark/search-prev.svg")
-            }
-            (Self::SearchNext, IconTheme::Light) => {
-                include_str!("../../assets/light/search-next.svg")
-            }
-            (Self::SearchNext, IconTheme::Dark) => {
-                include_str!("../../assets/dark/search-next.svg")
-            }
-            (Self::SearchClose, IconTheme::Light) => {
-                include_str!("../../assets/light/search-close.svg")
-            }
-            (Self::SearchClose, IconTheme::Dark) => {
-                include_str!("../../assets/dark/search-close.svg")
-            }
-            (Self::More, IconTheme::Light) => include_str!("../../assets/light/more.svg"),
-            (Self::More, IconTheme::Dark) => include_str!("../../assets/dark/more.svg"),
-            (Self::Sun, IconTheme::Light) => include_str!("../../assets/light/sun.svg"),
-            (Self::Sun, IconTheme::Dark) => include_str!("../../assets/dark/sun.svg"),
-            (Self::Moon, IconTheme::Light) => include_str!("../../assets/light/moon.svg"),
-            (Self::Moon, IconTheme::Dark) => include_str!("../../assets/dark/moon.svg"),
-            (Self::WindowMinimize, IconTheme::Light) => {
-                include_str!("../../assets/light/window-minimize.svg")
-            }
-            (Self::WindowMinimize, IconTheme::Dark) => {
-                include_str!("../../assets/dark/window-minimize.svg")
-            }
-            (Self::WindowMaximize, IconTheme::Light) => {
-                include_str!("../../assets/light/window-maximize.svg")
-            }
-            (Self::WindowMaximize, IconTheme::Dark) => {
-                include_str!("../../assets/dark/window-maximize.svg")
-            }
-            (Self::WindowRestore, IconTheme::Light) => {
-                include_str!("../../assets/light/window-restore.svg")
-            }
-            (Self::WindowRestore, IconTheme::Dark) => {
-                include_str!("../../assets/dark/window-restore.svg")
-            }
-            (Self::WindowClose, IconTheme::Light) => {
-                include_str!("../../assets/light/window-close.svg")
-            }
-            (Self::WindowClose, IconTheme::Dark) => {
-                include_str!("../../assets/dark/window-close.svg")
-            }
-        }
+        embedded_svg_match!(self, theme, {
+            App => "app",
+            Open => "open",
+            Search => "search",
+            SearchPrev => "search-prev",
+            SearchNext => "search-next",
+            SearchClose => "search-close",
+            More => "more",
+            Sun => "sun",
+            Moon => "moon",
+            WindowMinimize => "window-minimize",
+            WindowMaximize => "window-maximize",
+            WindowRestore => "window-restore",
+            WindowClose => "window-close",
+        })
     }
 }
 
