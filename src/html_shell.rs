@@ -324,23 +324,36 @@ fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{DefaultHtmlShell, HtmlShell, ShellModel};
+    use crate::settings::BodyFontSettings;
     use crate::ui::{EmbeddedUiAssets, Theme, UiTextAsset};
     use crate::{RenderedDocument, ViewerError, ViewerState, APP_NAME};
     use std::path::PathBuf;
 
-    #[test]
-    fn initial_shell_contains_viewer_identity_open_affordance_and_disabled_future_controls() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+    fn render_test_shell(state: &ViewerState) -> String {
+        render_test_shell_with(state, None, &[], "render shell")
+    }
 
-        let html = shell
+    fn render_test_shell_with(
+        state: &ViewerState,
+        body_font: Option<&BodyFontSettings>,
+        recent_files: &[PathBuf],
+        expect_message: &str,
+    ) -> String {
+        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
+        shell
             .render_shell(ShellModel {
                 app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
+                state,
                 theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
+                body_font,
+                recent_files,
             })
-            .expect("render initial shell");
+            .expect(expect_message)
+    }
+
+    #[test]
+    fn initial_shell_contains_viewer_identity_open_affordance_and_disabled_future_controls() {
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(html.contains("<!doctype html>"));
         assert!(html.contains("<html theme=\"light\" window-frame=\"extended\""));
@@ -405,18 +418,13 @@ mod tests {
 
     #[test]
     fn initial_shell_prompts_recent_file_menu_when_recent_files_exist() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
         let recent_files = vec![PathBuf::from(r"C:\docs\guide.md")];
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &recent_files,
-            })
-            .expect("render initial shell with recent files");
+        let html = render_test_shell_with(
+            &ViewerState::NoDocument,
+            None,
+            &recent_files,
+            "render initial shell with recent files",
+        );
 
         assert!(html.contains("data-current-file>Right-click to open recent files<"));
         assert!(!html.contains("No file open"));
@@ -431,17 +439,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\\docs"),
             html_body: "<h1>Guide</h1><p>Read only.</p>".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render document shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("guide.md"));
         assert!(html.contains("<base href=\"file:///C:/docs/\">"));
@@ -470,17 +468,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\\docs"),
             html_body: "<p>Select me.</p>".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render selection-enabled shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains(
             "<section class=\"markdown-selection-host\" data-markdown-selection-host data-document-loaded=\"true\" selectable><article class=\"markdown-body\" data-markdown-body data-viewer-mode=\"read-only\">"
@@ -500,17 +488,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render styled markdown shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains(
             "<section class=\"markdown-selection-host\" data-markdown-selection-host data-document-loaded=\"true\" selectable><article class=\"markdown-body\" data-markdown-body data-viewer-mode=\"read-only\"><h1>Guide</h1>"
@@ -530,17 +508,7 @@ mod tests {
             html_body: "<p>Existing</p>".to_string(),
         })
         .with_error(ViewerError::file_read(r"C:\\docs\\missing.md", "missing"));
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render error shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("existing.md"));
         assert!(html.contains("MDLuma could not read the selected Markdown file."));
@@ -557,17 +525,7 @@ mod tests {
     fn error_shell_without_previous_document_keeps_single_top_bar_and_replaces_empty_prompt() {
         let state = ViewerState::NoDocument
             .with_error(ViewerError::file_read(r"C:\\docs\\missing.md", "missing"));
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render startup error shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("<div class=\"file-name\" data-current-file></div>"));
         assert!(!html.contains("No file open"));
@@ -591,17 +549,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render sanitized local-only shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("Remote link"));
         assert!(html.contains("href=\"#\""));
@@ -619,17 +567,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\\docs"),
             html_body: "<p><img src=\"images/hero.jpg\" alt=\"hero\"></p>".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with relative image src");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("src=\"file:///C:/docs/images/hero.jpg\""));
     }
@@ -647,17 +585,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with unquoted remote attributes sanitized");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("href=#"));
         assert!(html.contains("src="));
@@ -671,17 +599,7 @@ mod tests {
 
     #[test]
     fn initial_shell_has_no_base_href_tag_when_no_document_is_loaded() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render initial shell without base href");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(!html.contains("<base href="));
     }
@@ -695,17 +613,7 @@ mod tests {
             base_dir: PathBuf::from(r"\\?\C:\docs"),
             html_body: "<h1>Guide</h1>".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with verbatim windows path");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("<base href=\"file:///C:/docs/\">"));
     }
@@ -723,17 +631,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with mixed-case attributes sanitized");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("HREF=\"#\""));
         assert!(html.contains("SRC="));
@@ -755,17 +653,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with unsafe html sanitized");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("<span>Click me</span>"));
         assert!(!html.contains("data-note="));
@@ -788,17 +676,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with dangerous schemes sanitized");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("<details open>"));
         assert!(html.contains("<summary>Shortcuts</summary>"));
@@ -817,17 +695,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\docs"),
             html_body: "<img srcset=\"cover.png 1x, https://example.com/cover@2x.png 2x\" src=\"cover.png\" alt=\"cover\">".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with remote srcset sanitized");
+        let html = render_test_shell(&state);
 
         assert!(!html.contains("srcset="));
         assert!(html.contains("src=\"file:///C:/docs/cover.png\""));
@@ -846,17 +714,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with raw html checkboxes sanitized");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("Done <input type=\"checkbox\" checked disabled>"));
         assert!(html.contains("Todo <input type=\"checkbox\" disabled>"));
@@ -999,17 +857,7 @@ mod tests {
 
     #[test]
     fn body_font_none_does_not_inject_css_variables() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell without body font");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(!html.contains("--body-font-family:"));
         assert!(!html.contains("--body-font-size:"));
@@ -1017,8 +865,6 @@ mod tests {
 
     #[test]
     fn body_font_some_injects_css_variables_on_markdown_body() {
-        use crate::settings::BodyFontSettings;
-
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\font.md"),
             file_name: "font.md".to_string(),
@@ -1029,17 +875,12 @@ mod tests {
             family_name: "Yu Gothic UI".to_string(),
             point_size_tenths: 120,
         };
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: Some(&body_font),
-                recent_files: &[],
-            })
-            .expect("render shell with body font");
+        let html = render_test_shell_with(
+            &state,
+            Some(&body_font),
+            &[],
+            "render shell with body font",
+        );
 
         assert!(html.contains("--body-font-family"));
         assert!(html.contains("--body-font-size"));
@@ -1049,8 +890,6 @@ mod tests {
 
     #[test]
     fn body_font_css_is_scoped_to_markdown_selection_host() {
-        use crate::settings::BodyFontSettings;
-
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\scoped.md"),
             file_name: "scoped.md".to_string(),
@@ -1061,17 +900,12 @@ mod tests {
             family_name: "Consolas".to_string(),
             point_size_tenths: 140,
         };
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: Some(&body_font),
-                recent_files: &[],
-            })
-            .expect("render shell with scoped body font");
+        let html = render_test_shell_with(
+            &state,
+            Some(&body_font),
+            &[],
+            "render shell with scoped body font",
+        );
 
         assert!(html.contains(".markdown-selection-host"));
         assert!(html.contains("Consolas"));
@@ -1080,8 +914,6 @@ mod tests {
 
     #[test]
     fn body_font_family_with_spaces_is_css_quoted() {
-        use crate::settings::BodyFontSettings;
-
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\escape.md"),
             file_name: "escape.md".to_string(),
@@ -1092,17 +924,12 @@ mod tests {
             family_name: "Font With Spaces".to_string(),
             point_size_tenths: 110,
         };
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: Some(&body_font),
-                recent_files: &[],
-            })
-            .expect("render shell with quoted body font");
+        let html = render_test_shell_with(
+            &state,
+            Some(&body_font),
+            &[],
+            "render shell with quoted body font",
+        );
 
         assert!(html.contains("\"Font With Spaces\""));
         assert!(html.contains("Segoe UI"));
@@ -1112,8 +939,6 @@ mod tests {
 
     #[test]
     fn body_font_includes_fallback_chain_after_selected_font() {
-        use crate::settings::BodyFontSettings;
-
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\fallback.md"),
             file_name: "fallback.md".to_string(),
@@ -1124,17 +949,12 @@ mod tests {
             family_name: "CustomFont".to_string(),
             point_size_tenths: 100,
         };
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: Some(&body_font),
-                recent_files: &[],
-            })
-            .expect("render shell with fallback chain");
+        let html = render_test_shell_with(
+            &state,
+            Some(&body_font),
+            &[],
+            "render shell with fallback chain",
+        );
 
         let family_idx = html.find("CustomFont").expect("font name present");
         let remainder = &html[family_idx..];
@@ -1145,17 +965,7 @@ mod tests {
 
     #[test]
     fn no_document_shell_has_external_editor_disabled() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render no-document shell");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(html.contains("data-action=\"external-editor\""));
         assert!(html.contains("data-action=\"external-editor\" disabled"));
@@ -1171,17 +981,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\docs"),
             html_body: "<p>Hello</p>".to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render document-loaded shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("data-action=\"external-editor\""));
         assert!(!html.contains("data-action=\"external-editor\" disabled"));
@@ -1197,17 +997,7 @@ mod tests {
             html_body: "<p>Existing</p>".to_string(),
         })
         .with_error(ViewerError::file_read(r"C:\docs\missing.md", "missing"));
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render error-with-doc shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("data-action=\"external-editor\""));
         assert!(!html.contains("data-action=\"external-editor\" disabled"));
@@ -1218,17 +1008,7 @@ mod tests {
     fn error_visible_without_previous_document_has_external_editor_disabled() {
         let state = ViewerState::NoDocument
             .with_error(ViewerError::file_read(r"C:\docs\missing.md", "missing"));
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render error-without-doc shell");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("data-action=\"external-editor\""));
         assert!(html.contains("data-action=\"external-editor\" disabled"));
@@ -1236,17 +1016,7 @@ mod tests {
 
     #[test]
     fn external_editor_appears_after_font_in_menu() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render menu order shell");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         let menu_start = html.find("<menu.popup>").expect("more menu popup present");
         let menu_html = &html[menu_start..];
@@ -1293,17 +1063,7 @@ mod tests {
 
     #[test]
     fn version_and_build_number_substitutions_coexist_with_existing_placeholders() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell for coexistence check");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(
             html.contains("MDLuma"),
@@ -1321,17 +1081,7 @@ mod tests {
 
     #[test]
     fn about_menu_item_appears_at_end_of_more_menu() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with about menu");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(html.contains(r#"data-action="about">About<"#));
 
@@ -1354,17 +1104,7 @@ mod tests {
 
     #[test]
     fn external_editor_setting_appears_between_external_editor_and_about_in_menu() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with menu ordering");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         let menu_start = html.find("<menu.popup>").expect("more menu popup present");
         let menu_html = &html[menu_start..];
@@ -1400,17 +1140,7 @@ mod tests {
 
     #[test]
     fn external_editor_setting_never_disabled_regardless_of_document() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let no_doc_html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render no-doc shell");
+        let no_doc_html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(
             no_doc_html.contains(r#"data-action="external-editor-setting""#),
@@ -1431,15 +1161,7 @@ mod tests {
             base_dir: PathBuf::from(r"C:\docs"),
             html_body: "<p>Hello</p>".to_string(),
         });
-        let doc_html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render doc-loaded shell");
+        let doc_html = render_test_shell(&state);
 
         assert!(
             doc_html.contains(r#"data-action="external-editor-setting""#),
@@ -1457,17 +1179,7 @@ mod tests {
 
     #[test]
     fn about_dialog_element_exists_with_required_content() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &ViewerState::NoDocument,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with about dialog");
+        let html = render_test_shell(&ViewerState::NoDocument);
 
         assert!(html.contains(r#"data-about-overlay"#));
         assert!(html.contains(r#"data-about-overlay hidden"#));
@@ -1484,7 +1196,6 @@ mod tests {
 
     #[test]
     fn error_overlay_exists_only_when_document_remains_visible() {
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
         let state = ViewerState::DocumentLoaded(RenderedDocument {
             path: PathBuf::from(r"C:\docs\existing.md"),
             file_name: "existing.md".to_string(),
@@ -1493,15 +1204,7 @@ mod tests {
         })
         .with_error(ViewerError::file_read(r"C:\docs\missing.md", "missing"));
 
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render shell with error overlay");
+        let html = render_test_shell(&state);
 
         assert!(html.contains("error-dialog"));
         assert!(html.contains("data-error-overlay"));
@@ -1528,17 +1231,7 @@ mod tests {
             )
             .to_string(),
         });
-        let shell = DefaultHtmlShell::new(EmbeddedUiAssets::default());
-
-        let html = shell
-            .render_shell(ShellModel {
-                app_name: APP_NAME,
-                state: &state,
-                theme: Theme::default(),
-                body_font: None,
-                recent_files: &[],
-            })
-            .expect("render data-href shell");
+        let html = render_test_shell(&state);
 
         assert!(
             html.contains(r#"data-href="https://example.com/safe""#),
