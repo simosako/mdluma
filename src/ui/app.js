@@ -14,7 +14,7 @@ function isWindowMaximized() {
 }
 
 function updateMaximizeButtonIcon() {
-  var img = document.querySelector('[data-action="window-toggle-maximize"] img');
+  var img = documentQuery('[data-action="window-toggle-maximize"] img');
   if (!img || typeof img.getAttribute !== "function") return;
 
   var maximized = isWindowMaximized();
@@ -59,43 +59,40 @@ function handleDocumentReady() {
   initializeInteractions();
 }
 
-function requestOpenFile() {
+function documentQuery(selector) {
+  if (typeof document === "undefined" || !document || typeof document.querySelector !== "function") {
+    return null;
+  }
+
+  return document.querySelector(selector);
+}
+
+function sendNativeCommand(command, ...args) {
   if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
     return;
   }
 
-  Window.this.xcall("open-file-requested");
+  Window.this.xcall(command, ...args);
+}
+
+function requestOpenFile() {
+  sendNativeCommand("open-file-requested");
 }
 
 function openFileButton() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector('[data-action="open-file"]');
+  return documentQuery('[data-action="open-file"]');
 }
 
 function closeWindowButton() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector('[data-action="window-close"]');
+  return documentQuery('[data-action="window-close"]');
 }
 
 function requestThemeToggle() {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
-    return;
-  }
-  Window.this.xcall("theme-toggle-requested");
+  sendNativeCommand("theme-toggle-requested");
 }
 
 function requestExternalEditor() {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
-    return;
-  }
-
-  Window.this.xcall("external-editor-requested");
+  sendNativeCommand("external-editor-requested");
 }
 
 function requestCloseWindow() {
@@ -113,27 +110,15 @@ function requestCloseWindow() {
 }
 
 function requestExternalEditorSetting() {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
-    return;
-  }
-
-  Window.this.xcall("external-editor-setting-requested");
+  sendNativeCommand("external-editor-setting-requested");
 }
 
 function requestOpenRecentFile(index) {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
-    return;
-  }
-
-  Window.this.xcall("open-recent-file", String(index));
+  sendNativeCommand("open-recent-file", String(index));
 }
 
 function requestErrorDismiss() {
-  if (typeof Window === "undefined" || !Window.this || typeof Window.this.xcall !== "function") {
-    return;
-  }
-
-  Window.this.xcall("error-dismiss-requested");
+  sendNativeCommand("error-dismiss-requested");
 }
 
 function recentFilesMenu() {
@@ -145,11 +130,7 @@ function recentFilesMenu() {
 }
 
 function markdownBodyHost() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-markdown-body-host]");
+  return documentQuery("[data-markdown-body-host]");
 }
 
 function hasLoadedDocument() {
@@ -242,51 +223,27 @@ function shouldIgnoreTarget(target) {
 }
 
 function searchPanel() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-search-panel]");
+  return documentQuery("[data-search-panel]");
 }
 
 function searchInput() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-search-input]");
+  return documentQuery("[data-search-input]");
 }
 
 function searchInfoElement() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-search-info]");
+  return documentQuery("[data-search-info]");
 }
 
 function aboutOverlayElement() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-about-overlay]");
+  return documentQuery("[data-about-overlay]");
 }
 
 function errorOverlayElement() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-error-overlay]");
+  return documentQuery("[data-error-overlay]");
 }
 
 function errorOkButton() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector('[data-action="error-ok"]');
+  return documentQuery('[data-action="error-ok"]');
 }
 
 function setAboutOverlayOpen(open) {
@@ -309,7 +266,7 @@ function setAboutOverlayOpen(open) {
   }
 
   if (open) {
-    const okButton = document.querySelector('[data-action="about-ok"]');
+    const okButton = documentQuery('[data-action="about-ok"]');
     if (okButton && typeof okButton.focus === "function") {
       okButton.focus();
     }
@@ -388,19 +345,11 @@ function handleClick(target) {
 }
 
 function markdownBody() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-markdown-body]");
+  return documentQuery("[data-markdown-body]");
 }
 
 function markdownSelectionOwner() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-markdown-selection-host]") || markdownBody();
+  return documentQuery("[data-markdown-selection-host]") || markdownBody();
 }
 
 function markdownSelection() {
@@ -1192,11 +1141,7 @@ if (typeof Element !== "undefined") {
 }
 
 function currentFileElement() {
-  if (!document || typeof document.querySelector !== "function") {
-    return null;
-  }
-
-  return document.querySelector("[data-current-file]");
+  return documentQuery("[data-current-file]");
 }
 
 function handleRecentFileMenuClick(_event, item) {
