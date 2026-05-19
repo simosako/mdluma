@@ -2837,7 +2837,7 @@ if (JSON.stringify(dropCall.args) !== JSON.stringify([
         return values.action || null;
       }
       if (name === "data-recent-index") {
-        return values.recentIndex || null;
+        return values.recentIndex ?? null;
       }
       return null;
     },
