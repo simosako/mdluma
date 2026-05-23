@@ -242,14 +242,7 @@ where
         match command {
             ViewerCommand::OpenFileRequested => self.open_file_requested(),
             ViewerCommand::OpenDroppedFiles(paths) => self.open_dropped_files(paths),
-            ViewerCommand::OpenRecentFile(index) => {
-                if let Some(path) = self.recent_files.get(index) {
-                    let path = path.clone();
-                    self.open_selected_path(&path)
-                } else {
-                    Ok(())
-                }
-            }
+            ViewerCommand::OpenRecentFile(index) => self.open_recent_file(index),
             ViewerCommand::ErrorDismissRequested => self.dismiss_error(),
             ViewerCommand::ThemeToggleRequested => self.toggle_theme(),
             ViewerCommand::FontSettingsRequested => self.open_body_font_dialog(),
@@ -403,6 +396,20 @@ where
         self.ui.show_document(&html)?;
         self.state = next_state;
         Ok(())
+    }
+
+    fn open_recent_file(&mut self, index: usize) -> Result<(), ViewerError> {
+        let Some(path) = self.recent_files.get(index).cloned() else {
+            return Ok(());
+        };
+
+        if matches!(path.try_exists(), Ok(false)) {
+            self.recent_files.remove(index);
+            let _ = self.settings_file.save(&self.build_settings());
+            return self.show_error_state(ViewerError::file_read(&path, "file no longer exists"));
+        }
+
+        self.open_selected_path(&path)
     }
 
     fn record_recent_file(&mut self, path: &std::path::Path) {
@@ -1322,6 +1329,49 @@ mod tests {
         );
         assert_eq!(ui.document_html(), vec!["<html>error</html>".to_string()]);
         assert!(ui.errors().is_empty());
+    }
+
+    #[test]
+    fn open_recent_file_removes_missing_entry_and_shows_error_without_loading() {
+        let dir = unique_test_dir("recent-file-missing-removal");
+        fs::create_dir_all(dir.as_ref()).expect("create test dir");
+        let settings_path = dir.join("settings.json");
+        let missing_path = dir.join("missing.md");
+        let retained_path = dir.join("retained.md");
+        SettingsFile::with_path(settings_path.clone())
+            .save(&Settings {
+                recent_files: vec![missing_path.clone(), retained_path.clone()],
+                ..Settings::default()
+            })
+            .expect("save test settings");
+
+        let loader = StubDocumentLoader::new(Vec::new());
+        let shell = RecordingHtmlShell::new(vec![Ok("<html>missing-error</html>".to_string())]);
+        let ui = RecordingViewerUi::default();
+        let mut controller = AppController::new(
+            StubFileDialog::cancelled(),
+            loader.clone(),
+            StubMarkdownRenderer::new(Vec::new()),
+            shell,
+            ui.clone(),
+        )
+        .with_settings_file(SettingsFile::with_path(settings_path.clone()));
+
+        controller
+            .handle_viewer_command(ViewerCommand::OpenRecentFile(0))
+            .expect("missing recent file should be removed without failing");
+
+        assert_eq!(loader.load_count(), 0, "missing path should not be loaded");
+        assert!(
+            controller.state().is_error_visible(),
+            "missing recent path should still show a read error"
+        );
+        assert_eq!(
+            ui.document_html(),
+            vec!["<html>missing-error</html>".to_string()]
+        );
+        let saved = SettingsFile::with_path(settings_path).load();
+        assert_eq!(saved.recent_files, vec![retained_path]);
     }
 
     #[test]
