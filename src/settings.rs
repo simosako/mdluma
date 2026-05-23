@@ -73,9 +73,7 @@ fn is_valid_window_geometry(g: &WindowGeometry) -> bool {
     g.right > g.left && g.bottom > g.top && g.left >= -32000 && g.top >= -32000
 }
 
-fn deserialize_window_geometry<'de, D>(
-    deserializer: D,
-) -> Result<Option<WindowGeometry>, D::Error>
+fn deserialize_window_geometry<'de, D>(deserializer: D) -> Result<Option<WindowGeometry>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -596,10 +594,7 @@ mod tests {
         let loaded = SettingsFile::with_path(path).load();
         assert_eq!(loaded.theme, ThemePreference::Dark);
         assert_eq!(loaded.body_font, None);
-        assert_eq!(
-            loaded.cjk_friendly_emphasis,
-            DEFAULT_CJK_FRIENDLY_EMPHASIS
-        );
+        assert_eq!(loaded.cjk_friendly_emphasis, DEFAULT_CJK_FRIENDLY_EMPHASIS);
     }
 
     #[test]

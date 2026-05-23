@@ -386,5 +386,4 @@ mod tests {
             before.modified().expect("modified before")
         );
     }
-
 }

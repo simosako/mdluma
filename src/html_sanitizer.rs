@@ -345,12 +345,52 @@ fn parsed_tag_name(tag: &str) -> Option<(&str, bool)> {
 
 fn is_allowed_render_body_tag(tag_name: &str) -> bool {
     const ALLOWED: &[&str] = &[
-        "a", "abbr", "b", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2",
-        "h3", "h4", "h5", "h6", "hr", "i", "img", "input", "kbd", "li", "mark", "ol", "p", "pre",
-        "s", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot",
-        "th", "thead", "tr", "u", "ul",
+        "a",
+        "abbr",
+        "b",
+        "blockquote",
+        "br",
+        "code",
+        "del",
+        "details",
+        "div",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "i",
+        "img",
+        "input",
+        "kbd",
+        "li",
+        "mark",
+        "ol",
+        "p",
+        "pre",
+        "s",
+        "small",
+        "span",
+        "strong",
+        "sub",
+        "summary",
+        "sup",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "tr",
+        "u",
+        "ul",
     ];
-    ALLOWED.iter().any(|&allowed| tag_name.eq_ignore_ascii_case(allowed))
+    ALLOWED
+        .iter()
+        .any(|&allowed| tag_name.eq_ignore_ascii_case(allowed))
 }
 
 fn is_allowed_render_body_attribute(tag_name: &str, attribute: &str) -> bool {
@@ -570,30 +610,54 @@ mod tests {
     fn span_style_with_dangerous_property_is_stripped() {
         let html = r#"<span style="position:fixed;top:0;left:0;">overlay</span>"#;
         let result = sanitize_body_html(html, None);
-        assert!(!result.contains("position"), "dangerous CSS should be stripped");
-        assert!(!result.contains("fixed"), "dangerous CSS value should be stripped");
+        assert!(
+            !result.contains("position"),
+            "dangerous CSS should be stripped"
+        );
+        assert!(
+            !result.contains("fixed"),
+            "dangerous CSS value should be stripped"
+        );
     }
 
     #[test]
     fn span_style_with_all_dangerous_properties_removes_style_attribute() {
         let html = r#"<span style="position:fixed;">overlay</span>"#;
         let result = sanitize_body_html(html, None);
-        assert!(!result.contains("style="), "style attribute should be removed when all properties are unsafe");
-        assert!(result.contains("<span>"), "span element itself should be kept");
+        assert!(
+            !result.contains("style="),
+            "style attribute should be removed when all properties are unsafe"
+        );
+        assert!(
+            result.contains("<span>"),
+            "span element itself should be kept"
+        );
     }
 
     #[test]
     fn span_style_mixes_safe_and_unsafe_properties_retains_safe_only() {
         let html = r#"<span style="color:#abc;position:fixed;font-style:italic;">text</span>"#;
         let result = sanitize_body_html(html, None);
-        assert!(result.contains("color:#abc"), "safe color property should pass");
-        assert!(result.contains("font-style:italic"), "safe font-style property should pass");
-        assert!(!result.contains("position"), "dangerous position property should be stripped");
+        assert!(
+            result.contains("color:#abc"),
+            "safe color property should pass"
+        );
+        assert!(
+            result.contains("font-style:italic"),
+            "safe font-style property should pass"
+        );
+        assert!(
+            !result.contains("position"),
+            "dangerous position property should be stripped"
+        );
     }
 
     #[test]
     fn filter_safe_highlight_style_allows_color() {
-        assert_eq!(filter_safe_highlight_style("color:#c0c5ce"), "color:#c0c5ce");
+        assert_eq!(
+            filter_safe_highlight_style("color:#c0c5ce"),
+            "color:#c0c5ce"
+        );
     }
 
     #[test]
@@ -647,6 +711,9 @@ mod tests {
         // declarations without ':' separator are silently dropped
         assert_eq!(filter_safe_highlight_style("malformed"), "");
         // valid followed by malformed
-        assert_eq!(filter_safe_highlight_style("color:red;malformed"), "color:red");
+        assert_eq!(
+            filter_safe_highlight_style("color:red;malformed"),
+            "color:red"
+        );
     }
 }

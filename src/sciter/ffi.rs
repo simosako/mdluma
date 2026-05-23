@@ -652,7 +652,8 @@ impl SciterApi {
             *std::ptr::addr_of_mut!(DL_ORIGINAL_PROC) =
                 Some(std::mem::transmute::<isize, WndProcFn>(prev));
             *std::ptr::addr_of_mut!(DL_GET_ROOT_ELEMENT_FN) = Some(self.sciter_get_root_element);
-            *std::ptr::addr_of_mut!(DL_EVAL_ELEMENT_SCRIPT_FN) = Some(self.sciter_eval_element_script);
+            *std::ptr::addr_of_mut!(DL_EVAL_ELEMENT_SCRIPT_FN) =
+                Some(self.sciter_eval_element_script);
         }
         unsafe {
             DragAcceptFiles(window, 1);
@@ -928,9 +929,7 @@ impl SciterApi {
             Ok(())
         } else {
             Err(SciterRuntimeError::ApiUnavailable {
-                message: format!(
-                    "SciterEvalElementScript failed with status {eval_status}"
-                ),
+                message: format!("SciterEvalElementScript failed with status {eval_status}"),
             })
         }
     }

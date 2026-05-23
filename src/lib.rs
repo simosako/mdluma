@@ -78,11 +78,8 @@ pub fn run() -> Result<(), StartupError> {
                 |runtime| {
                     let settings_file = crate::settings::SettingsFile::new();
                     let settings = settings_file.load();
-                    SciterWindow::with_geometry(
-                        runtime,
-                        settings.window_geometry.as_ref(),
-                    )
-                    .map(|window| Rc::new(RefCell::new(window)))
+                    SciterWindow::with_geometry(runtime, settings.window_geometry.as_ref())
+                        .map(|window| Rc::new(RefCell::new(window)))
                 },
                 ProcessViewerChildLauncher::default(),
                 ProcessExternalEditorLauncher::default(),
@@ -137,9 +134,9 @@ where
             const CASCADE_STEP: i32 = 30;
             const MAX_OFFSET: i32 = 200;
             let saved = crate::settings::SettingsFile::new().load();
-            let (base_left, base_top) = saved.window_geometry.map_or((100, 100), |geo| {
-                (geo.left, geo.top)
-            });
+            let (base_left, base_top) = saved
+                .window_geometry
+                .map_or((100, 100), |geo| (geo.left, geo.top));
             for (index, file_path) in file_paths.into_iter().enumerate() {
                 let abs_left = if index == 0 {
                     0
@@ -371,9 +368,7 @@ mod tests {
         assert!(ui
             .latest_initial_html()
             .contains("class=\"titlebar-drag-region\""));
-        assert!(ui
-            .latest_initial_html()
-            .contains("data-current-file"));
+        assert!(ui.latest_initial_html().contains("data-current-file"));
         assert!(!ui.latest_initial_html().contains("No file open"));
         assert!(ui.latest_initial_html().contains("Open Markdown file"));
         assert!(ui
@@ -506,12 +501,9 @@ mod tests {
             {
                 let ui = ui.clone();
                 move |_distribution_dir, runtime| {
-                    build_startup_controller(runtime, |_| Ok(ui.clone()), (), ())
-                        .map(|c| {
-                            c.with_settings_file(SettingsFile::with_path(
-                                test_settings_path.clone(),
-                            ))
-                        })
+                    build_startup_controller(runtime, |_| Ok(ui.clone()), (), ()).map(|c| {
+                        c.with_settings_file(SettingsFile::with_path(test_settings_path.clone()))
+                    })
                 }
             },
             (),
@@ -922,7 +914,12 @@ mod tests {
     impl CascadeRecordingLauncher {
         fn new() -> (Self, Arc<Mutex<Vec<(PathBuf, i32, i32)>>>) {
             let records = Arc::new(Mutex::new(Vec::new()));
-            (Self { records: records.clone() }, records)
+            (
+                Self {
+                    records: records.clone(),
+                },
+                records,
+            )
         }
     }
 
@@ -1018,14 +1015,10 @@ mod tests {
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
         let _distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
 
-        let mut controller = build_startup_controller(
-            fake_runtime(),
-            |_| Ok(ui.clone()),
-            (),
-            ee_launcher,
-        )
-        .expect("build controller with external editor launcher should succeed")
-        .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
+        let mut controller =
+            build_startup_controller(fake_runtime(), |_| Ok(ui.clone()), (), ee_launcher)
+                .expect("build controller with external editor launcher should succeed")
+                .with_settings_file(SettingsFile::with_path(dir.join("settings.json")));
 
         controller.prepare_startup_path(&source_path);
 
@@ -1054,9 +1047,8 @@ mod tests {
         let _distribution_dir = PathBuf::from(r"C:\dist\MDLuma");
         let ui = Rc::new(RefCell::new(RecordingStartupUi::default()));
 
-        let controller =
-            build_startup_controller(fake_runtime(), |_| Ok(ui.clone()), (), ())
-                .expect("build controller with unit launchers should succeed");
+        let controller = build_startup_controller(fake_runtime(), |_| Ok(ui.clone()), (), ())
+            .expect("build controller with unit launchers should succeed");
 
         assert_eq!(ui.borrow().bind_count, 0, "controller not yet started");
         assert_eq!(ui.borrow().event_loop_count, 0);

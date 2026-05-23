@@ -2845,8 +2845,10 @@ if (JSON.stringify(dropCall.args) !== JSON.stringify([
             .expect("system time should be after unix epoch")
             .as_nanos();
         let run_id = NODE_ASSERTION_RUN_ID.fetch_add(1, Ordering::Relaxed);
-        let script_path =
-            temp_dir.join(format!("ui-assertions-{}-{nonce}-{run_id}.cjs", std::process::id()));
+        let script_path = temp_dir.join(format!(
+            "ui-assertions-{}-{nonce}-{run_id}.cjs",
+            std::process::id()
+        ));
         fs::write(&script_path, harness).expect("write node assertion harness");
 
         let output = Command::new("node")

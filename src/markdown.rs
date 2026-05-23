@@ -63,8 +63,11 @@ impl MarkdownRenderer for ComrakMarkdownRenderer {
     ) -> Result<RenderedDocument, ViewerError> {
         static SYNTECT_ADAPTER: OnceLock<comrak::plugins::syntect::SyntectAdapter> =
             OnceLock::new();
-        let adapter = SYNTECT_ADAPTER
-            .get_or_init(|| SyntectAdapterBuilder::new().theme(SYNTAX_HIGHLIGHT_THEME).build());
+        let adapter = SYNTECT_ADAPTER.get_or_init(|| {
+            SyntectAdapterBuilder::new()
+                .theme(SYNTAX_HIGHLIGHT_THEME)
+                .build()
+        });
 
         let mut plugins = Plugins::default();
         plugins.render.codefence_syntax_highlighter = Some(adapter);
