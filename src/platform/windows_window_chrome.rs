@@ -1,9 +1,7 @@
 use crate::sciter::ffi::SciterWindowHandle;
 use crate::ViewerError;
 #[cfg(windows)]
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::{SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WM_CLOSE};
 
 const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
 const DWMWCP_DONOTROUND: u32 = 1;
@@ -40,7 +38,6 @@ impl WindowChromeController for WindowsWindowChrome {
     fn close(&self, hwnd: SciterWindowHandle) -> Result<(), ViewerError> {
         close_with(hwnd, &RuntimeWin32)
     }
-
 }
 
 #[cfg(not(windows))]
@@ -179,7 +176,6 @@ impl Win32WindowChrome for RuntimeWin32 {
     ) -> bool {
         runtime_post_message(hwnd, message, w_param, l_param)
     }
-
 }
 
 #[cfg(windows)]
@@ -477,7 +473,6 @@ mod tests {
                 .set(Some((message, w_param, l_param)));
             self.post_message_success
         }
-
     }
 
     impl Default for FakeWin32 {

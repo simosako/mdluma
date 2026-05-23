@@ -844,8 +844,6 @@ mod tests {
         assert_eq!(doc.file_name, "readme.md");
     }
 
-
-
     #[test]
     fn file_name_is_leaf_name_regardless_of_path_absolutization() {
         let selected_path = PathBuf::from(r"docs\notes.md");
@@ -886,8 +884,6 @@ mod tests {
             "file_name must be a leaf name without path separators"
         );
     }
-
-
 
     #[test]
     fn start_renders_initial_state_into_viewer_ui() {
@@ -1522,8 +1518,6 @@ mod tests {
         assert!(ui.errors().is_empty());
     }
 
-
-
     #[test]
     fn prepare_startup_path_file_read_error_carries_variant_and_path_diagnostic() {
         let file_path = PathBuf::from(r"C:\restricted\secret.md");
@@ -1603,7 +1597,6 @@ mod tests {
             panic!("expected ErrorVisible state with InvalidEncoding variant");
         }
     }
-
 
     #[test]
     fn start_succeeds_after_prepare_startup_path_failure() {
@@ -2454,7 +2447,11 @@ mod tests {
         controller
             .handle_viewer_command(ViewerCommand::ThemeToggleRequested)
             .expect("second toggle should succeed");
-        assert_eq!(ui.initial_html().len(), 1, "no additional HTML on second toggle");
+        assert_eq!(
+            ui.initial_html().len(),
+            1,
+            "no additional HTML on second toggle"
+        );
     }
 
     #[test]
@@ -3364,7 +3361,6 @@ mod tests {
             self.inner.borrow_mut().native_window_handle = handle;
         }
 
-
         fn apply_body_font_calls(&self) -> Vec<Option<crate::settings::BodyFontSettings>> {
             self.inner.borrow().apply_body_font_calls.clone()
         }
@@ -3585,8 +3581,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn open_in_external_editor_falls_back_to_notepad_when_no_configured_editor() {
         let (editor_launcher, launched) = StubExternalEditorLauncher::new();
@@ -3694,8 +3688,6 @@ mod tests {
             "second request must use new (switched) document path"
         );
     }
-
-
 
     #[test]
     fn open_in_external_editor_command_dispatches_to_launcher_with_configured_editor() {
@@ -4112,8 +4104,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn external_editor_setting_cancelled_preserves_existing_config() {
         let dir = unique_test_dir("ext-editor-cancel-preserve");
@@ -4430,8 +4420,6 @@ mod tests {
             "rendered HTML must preserve document body content after launch failure (req 4.2)"
         );
     }
-
-
 
     #[test]
     fn with_settings_file_reloads_external_editor() {

@@ -875,12 +875,8 @@ mod tests {
             family_name: "Yu Gothic UI".to_string(),
             point_size_tenths: 120,
         };
-        let html = render_test_shell_with(
-            &state,
-            Some(&body_font),
-            &[],
-            "render shell with body font",
-        );
+        let html =
+            render_test_shell_with(&state, Some(&body_font), &[], "render shell with body font");
 
         assert!(html.contains("--body-font-family"));
         assert!(html.contains("--body-font-size"));

@@ -9,8 +9,8 @@ use crate::sciter::ffi::{set_native_shortcut_dispatch, NATIVE_SHORTCUT_EXTERNAL_
 use crate::sciter::runtime::SciterRuntime;
 use crate::settings::BodyFontSettings;
 use crate::{
-    DefaultHtmlShell, EmbeddedUiAssets, HtmlShell, ShellModel, Theme, ViewerError,
-    ViewerState, WindowChromeController, WindowsWindowChrome, APP_NAME,
+    DefaultHtmlShell, EmbeddedUiAssets, HtmlShell, ShellModel, Theme, ViewerError, ViewerState,
+    WindowChromeController, WindowsWindowChrome, APP_NAME,
 };
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -58,7 +58,10 @@ pub trait ViewerUi {
         Ok(())
     }
 
-    fn apply_body_font(&mut self, _body_font: Option<&BodyFontSettings>) -> Result<(), ViewerError> {
+    fn apply_body_font(
+        &mut self,
+        _body_font: Option<&BodyFontSettings>,
+    ) -> Result<(), ViewerError> {
         Ok(())
     }
 
@@ -327,10 +330,7 @@ impl SciterWindow {
                 self.event_bridge_tag = binding.cast();
                 set_native_drop_dispatch(binding.cast(), dispatch_native_drops_from_wndproc);
                 #[cfg(windows)]
-                set_native_shortcut_dispatch(
-                    binding.cast(),
-                    dispatch_native_shortcut_from_wndproc,
-                );
+                set_native_shortcut_dispatch(binding.cast(), dispatch_native_shortcut_from_wndproc);
                 Ok(())
             }
             Err(error) => {
@@ -855,7 +855,7 @@ impl ViewerUi for SciterWindow {
     mb.style.set({ fontFamily: "", fontSize: "" });
   }
 })();"#
-                .to_string(),
+                    .to_string(),
             };
             let _ = self.api.eval_document_script(self.window, &script);
         }
@@ -1046,11 +1046,11 @@ mod tests {
         HandlerBinding, SciterValue, SciterWindow, ViewerCommand, ViewerCommandHandler, ViewerUi,
         WindowChromeAction, HANDLE_BEHAVIOR_EVENT, HANDLE_SCRIPTING_METHOD_CALL,
     };
+    #[cfg(windows)]
+    use crate::sciter::ffi::NATIVE_SHORTCUT_EXTERNAL_EDITOR;
     use crate::sciter::ffi::{
         SciterApi, SciterCallback, SciterWindowHandle, ScriptingMethodParams,
     };
-    #[cfg(windows)]
-    use crate::sciter::ffi::NATIVE_SHORTCUT_EXTERNAL_EDITOR;
     use crate::ViewerError;
     use crate::{WindowChromeController, WindowChromeState};
     use std::cell::RefCell;
@@ -1445,9 +1445,12 @@ mod tests {
         };
         let fake_window_chrome = FakeWindowChrome::default();
         let chrome_calls = fake_window_chrome.calls.clone();
-        let mut window =
-            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome), None)
-                .expect("create window wrapper");
+        let mut window = SciterWindow::with_api_and_window_chrome(
+            fake_api(true),
+            Box::new(fake_window_chrome),
+            None,
+        )
+        .expect("create window wrapper");
 
         window
             .bind_viewer_command_handler(&mut handler)
@@ -1795,9 +1798,12 @@ mod tests {
     fn request_close_delegates_to_window_chrome_close() {
         let fake_window_chrome = FakeWindowChrome::default();
         let chrome_calls = fake_window_chrome.calls.clone();
-        let mut window =
-            SciterWindow::with_api_and_window_chrome(fake_api(true), Box::new(fake_window_chrome), None)
-                .expect("create window wrapper");
+        let mut window = SciterWindow::with_api_and_window_chrome(
+            fake_api(true),
+            Box::new(fake_window_chrome),
+            None,
+        )
+        .expect("create window wrapper");
 
         window
             .request_close()
@@ -1849,7 +1855,6 @@ mod tests {
             self.calls.borrow_mut().push(WindowChromeAction::Close);
             Err(ViewerError::ui("window close rejected"))
         }
-
     }
 
     #[derive(Default)]
@@ -1881,7 +1886,6 @@ mod tests {
             self.calls.borrow_mut().push(WindowChromeAction::Close);
             Ok(())
         }
-
     }
 
     #[test]
