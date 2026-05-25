@@ -172,7 +172,22 @@ function isWithinMarkdownBodyHost(target) {
 }
 
 function markdownContextMenuHtml() {
-  return `<li name="edit:copy">Copy</li><li name="edit:selectall" data-action="select-all">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
+  return `<li class="copy" data-context-action="copy">Copy</li><li name="edit:selectall" data-action="select-all">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
+}
+
+function bindMarkdownContextMenuActions(menu) {
+  if (!menu || typeof menu.querySelector !== "function") {
+    return;
+  }
+
+  const copyItem = menu.querySelector('[data-context-action="copy"]');
+  if (copyItem && typeof copyItem.addEventListener === "function") {
+    copyItem.addEventListener("click", function (event) {
+      if (performCopy() && event && typeof event.preventDefault === "function") {
+        event.preventDefault();
+      }
+    });
+  }
 }
 
 function createMarkdownContextMenu() {
@@ -187,6 +202,7 @@ function createMarkdownContextMenu() {
 
   menu.className = "context";
   menu.innerHTML = markdownContextMenuHtml();
+  bindMarkdownContextMenuActions(menu);
   return menu;
 }
 
@@ -521,30 +537,35 @@ function isCopyShortcut(event) {
   return isModifiedLetterShortcut(event, "c");
 }
 
-function handleCopyShortcut(event) {
-  if (!isCopyShortcut(event)) {
-    return;
-  }
-
+function performCopy() {
   const text = selectedText();
   if (!text || typeof Clipboard === "undefined" || typeof Clipboard.writeText !== "function") {
-    return;
+    return false;
   }
 
   try {
     if (!Clipboard.writeText(text)) {
       showCopyFailure("Copy failed. Try again.");
-      return;
+      return false;
     }
   } catch (_error) {
     showCopyFailure("Copy failed. Try again.");
-    return;
+    return false;
   }
 
   clearCopyStatus();
+  return true;
+}
 
-  if (typeof event.preventDefault === "function") {
-    event.preventDefault();
+function handleCopyShortcut(event) {
+  if (!isCopyShortcut(event)) {
+    return;
+  }
+
+  if (performCopy()) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
   }
 }
 

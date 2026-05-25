@@ -302,7 +302,8 @@ mod tests {
         assert!(js.contains("contextmenu"));
         assert!(js.contains("menu.className = \"context\""));
         assert!(js.contains("data-document-loaded"));
-        assert!(js.contains("edit:copy"));
+        assert!(js.contains("data-context-action=\"copy\""));
+        assert!(js.contains("bindMarkdownContextMenuActions"));
         assert!(js.contains("edit:selectall"));
     }
 
@@ -343,7 +344,7 @@ global.document = {
 eval(scriptSource);
 
 const html = globalThis.__mdlumaTestHooks.markdownContextMenuHtml();
-if (!html.includes('name="edit:copy"')) {
+if (!html.includes('data-context-action="copy"')) {
   throw new Error("context menu must include Copy action");
 }
 if (!html.includes('name="edit:selectall"')) {
@@ -351,6 +352,140 @@ if (!html.includes('name="edit:selectall"')) {
 }
 if (!html.includes('data-action="external-editor" disabled')) {
   throw new Error("external editor must be disabled without document: " + html);
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
+    fn markdown_context_menu_copy_click_copies_current_markdown_selection() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const listeners = {};
+const writes = [];
+let copyClickHandler = null;
+let statusText = "stale";
+
+const openButton = {
+  addEventListener() {},
+};
+
+const copyItem = {
+  addEventListener(type, handler) {
+    if (type === "click") {
+      copyClickHandler = handler;
+    }
+  },
+};
+
+const contextMenu = {
+  className: "",
+  innerHTML: "",
+  querySelector(selector) {
+    if (selector === '[data-context-action="copy"]') {
+      return copyItem;
+    }
+    return null;
+  },
+};
+
+const markdownBodyElement = {
+  selection: {
+    isCollapsed: false,
+    toString() {
+      return "Context menu selection";
+    },
+  },
+};
+
+const copyStatus = {
+  get textContent() {
+    return statusText;
+  },
+  set textContent(value) {
+    statusText = value;
+  },
+};
+
+global.Clipboard = {
+  writeText(text) {
+    writes.push(text);
+    return true;
+  },
+};
+
+global.document = {
+  readyState: "loading",
+  addEventListener(type, handler) {
+    listeners[type] = handler;
+  },
+  createElement(tag) {
+    if (tag === "menu") {
+      return contextMenu;
+    }
+    return null;
+  },
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return openButton;
+    }
+    if (selector === "[data-markdown-body]") {
+      return markdownBodyElement;
+    }
+    if (selector === "[data-copy-status]") {
+      return copyStatus;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+const event = {
+  target: {
+    closest(selector) {
+      if (selector === "[data-markdown-body]") {
+        return markdownBodyElement;
+      }
+      return null;
+    },
+  },
+  source: null,
+};
+
+if (!globalThis.__mdlumaTestHooks.handleMarkdownContextMenu(event, event.target)) {
+  throw new Error("markdown context menu should be handled");
+}
+if (event.source !== contextMenu) {
+  throw new Error("context menu source mismatch");
+}
+if (typeof copyClickHandler !== "function") {
+  throw new Error("copy menu item must receive a direct click handler");
+}
+
+let prevented = 0;
+copyClickHandler({
+  preventDefault() {
+    prevented += 1;
+  },
+});
+
+if (JSON.stringify(writes) !== JSON.stringify(["Context menu selection"])) {
+  throw new Error("context menu copy should write selected text: " + JSON.stringify(writes));
+}
+if (prevented !== 1) {
+  throw new Error("successful context menu copy should prevent default once, got " + prevented);
+}
+if (statusText !== "") {
+  throw new Error("successful context menu copy should clear copy status, got " + JSON.stringify(statusText));
 }
         "#,
         );
