@@ -526,7 +526,7 @@ function selectedText() {
     return "";
   }
 
-  return text;
+  return text.replace(/\u0000/g, "");
 }
 
 function isCopyShortcut(event) {

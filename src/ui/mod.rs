@@ -299,6 +299,7 @@ mod tests {
         assert!(js.contains("Window.this.update()"));
         assert!(js.contains("clearCopyStatus"));
         assert!(js.contains("showCopyFailure"));
+        assert!(js.contains("replace(/\\u0000/g, \"\")"));
         assert!(js.contains("contextmenu"));
         assert!(js.contains("menu.className = \"context\""));
         assert!(js.contains("data-document-loaded"));
@@ -1285,6 +1286,83 @@ if (prevented !== 2) {
 
 if (statusText !== "") {
   throw new Error("successful copy should clear copy status, got " + JSON.stringify(statusText));
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
+    fn copy_interaction_script_removes_nul_placeholders_before_clipboard_write() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const listeners = {};
+const writes = [];
+
+const openButton = {
+  addEventListener() {},
+};
+
+const markdownBodyElement = {
+  selection: {
+    isCollapsed: false,
+    toString() {
+      return "Before image\u0000After image";
+    },
+  },
+};
+
+const copyStatus = {
+  get textContent() {
+    return "";
+  },
+  set textContent(_value) {},
+};
+
+global.Clipboard = {
+  writeText(text) {
+    writes.push(text);
+    return true;
+  },
+};
+
+global.document = {
+  readyState: "loading",
+  addEventListener(type, handler) {
+    listeners[type] = handler;
+  },
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return openButton;
+    }
+    if (selector === "[data-markdown-body]") {
+      return markdownBodyElement;
+    }
+    if (selector === "[data-copy-status]") {
+      return copyStatus;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+listeners.keydown({
+  ctrlKey: true,
+  metaKey: false,
+  key: "c",
+  preventDefault() {},
+});
+
+if (JSON.stringify(writes) !== JSON.stringify(["Before imageAfter image"])) {
+  throw new Error("copy should remove NUL placeholders without truncating text: " + JSON.stringify(writes));
 }
         "#,
         );
