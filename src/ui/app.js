@@ -172,7 +172,7 @@ function isWithinMarkdownBodyHost(target) {
 }
 
 function markdownContextMenuHtml() {
-  return `<li name="edit:copy">Copy</li><li name="edit:selectall" data-action="select-all">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
+  return `<li data-action="copy">Copy</li><li name="edit:selectall" data-action="select-all">Select All</li><hr/><li class="external-editor" data-action="external-editor"${hasLoadedDocument() ? "" : " disabled"}>External Editor</li>`;
 }
 
 function createMarkdownContextMenu() {
@@ -315,6 +315,8 @@ function handleClick(target) {
   if (action !== "open-file") {
     if (action === "search") {
       toggleSearchPanel();
+    } else if (action === "copy") {
+      performCopy();
     } else if (action === "theme") {
       requestThemeToggle();
     } else if (action === "font") {
@@ -521,30 +523,35 @@ function isCopyShortcut(event) {
   return isModifiedLetterShortcut(event, "c");
 }
 
-function handleCopyShortcut(event) {
-  if (!isCopyShortcut(event)) {
-    return;
-  }
-
+function performCopy() {
   const text = selectedText();
   if (!text || typeof Clipboard === "undefined" || typeof Clipboard.writeText !== "function") {
-    return;
+    return false;
   }
 
   try {
     if (!Clipboard.writeText(text)) {
       showCopyFailure("Copy failed. Try again.");
-      return;
+      return false;
     }
   } catch (_error) {
     showCopyFailure("Copy failed. Try again.");
-    return;
+    return false;
   }
 
   clearCopyStatus();
+  return true;
+}
 
-  if (typeof event.preventDefault === "function") {
-    event.preventDefault();
+function handleCopyShortcut(event) {
+  if (!isCopyShortcut(event)) {
+    return;
+  }
+
+  if (performCopy()) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
   }
 }
 

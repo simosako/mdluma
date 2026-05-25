@@ -302,7 +302,7 @@ mod tests {
         assert!(js.contains("contextmenu"));
         assert!(js.contains("menu.className = \"context\""));
         assert!(js.contains("data-document-loaded"));
-        assert!(js.contains("edit:copy"));
+        assert!(js.contains("data-action=\"copy\""));
         assert!(js.contains("edit:selectall"));
     }
 
@@ -343,7 +343,7 @@ global.document = {
 eval(scriptSource);
 
 const html = globalThis.__mdlumaTestHooks.markdownContextMenuHtml();
-if (!html.includes('name="edit:copy"')) {
+if (!html.includes('data-action="copy"')) {
   throw new Error("context menu must include Copy action");
 }
 if (!html.includes('name="edit:selectall"')) {
