@@ -469,13 +469,16 @@ impl SciterApi {
         let default_height: i32 = 720;
         let mut frame = if has_cascade {
             let (w, h) = saved_geometry.map_or((default_width, default_height), |geo| {
-                (geo.right - geo.left, geo.bottom - geo.top)
+                (
+                    geo.right.saturating_sub(geo.left),
+                    geo.bottom.saturating_sub(geo.top),
+                )
             });
             SciterRect {
                 left: cascade_left,
                 top: cascade_top,
-                right: cascade_left + w,
-                bottom: cascade_top + h,
+                right: cascade_left.saturating_add(w),
+                bottom: cascade_top.saturating_add(h),
             }
         } else if let Some(geo) = saved_geometry {
             SciterRect {
@@ -1196,10 +1199,10 @@ fn clamp_rect_to_screen(mut rect: SciterRect, screen: SciterRect) -> SciterRect 
         return rect;
     }
 
-    let mut width = rect.right - rect.left;
-    let mut height = rect.bottom - rect.top;
-    let screen_width = screen.right - screen.left;
-    let screen_height = screen.bottom - screen.top;
+    let mut width = rect.right.saturating_sub(rect.left);
+    let mut height = rect.bottom.saturating_sub(rect.top);
+    let screen_width = screen.right.saturating_sub(screen.left);
+    let screen_height = screen.bottom.saturating_sub(screen.top);
 
     if screen_width <= 0 || screen_height <= 0 {
         return rect;
@@ -1208,10 +1211,14 @@ fn clamp_rect_to_screen(mut rect: SciterRect, screen: SciterRect) -> SciterRect 
     width = width.min(screen_width);
     height = height.min(screen_height);
 
-    rect.left = rect.left.clamp(screen.left, screen.right - width);
-    rect.top = rect.top.clamp(screen.top, screen.bottom - height);
-    rect.right = rect.left + width;
-    rect.bottom = rect.top + height;
+    rect.left = rect
+        .left
+        .clamp(screen.left, screen.right.saturating_sub(width));
+    rect.top = rect
+        .top
+        .clamp(screen.top, screen.bottom.saturating_sub(height));
+    rect.right = rect.left.saturating_add(width);
+    rect.bottom = rect.top.saturating_add(height);
     rect
 }
 
@@ -2216,6 +2223,29 @@ mod tests {
         assert_eq!(clamped.top, 30);
         assert_eq!(clamped.right, 800);
         assert_eq!(clamped.bottom, 630);
+    }
+
+    #[test]
+    fn clamp_rect_to_screen_handles_extreme_geometry_without_overflow() {
+        let screen = SciterRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let rect = SciterRect {
+            left: i32::MIN,
+            top: i32::MIN,
+            right: i32::MAX,
+            bottom: i32::MAX,
+        };
+
+        let clamped = clamp_rect_to_screen(rect, screen);
+
+        assert_eq!(clamped.left, 0);
+        assert_eq!(clamped.top, 0);
+        assert_eq!(clamped.right, 1920);
+        assert_eq!(clamped.bottom, 1080);
     }
 
     #[test]
