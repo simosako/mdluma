@@ -224,6 +224,17 @@ where
         }
     }
 
+    pub fn reload_requested(&mut self) -> Result<(), ViewerError> {
+        let Some(path) = self
+            .state
+            .current_document()
+            .map(|document| document.path.clone())
+        else {
+            return Ok(());
+        };
+        self.open_selected_path(&path)
+    }
+
     pub fn open_external_editor_setting(&mut self) -> Result<(), ViewerError> {
         let owner = self.ui.native_window_handle();
         match self.dialog.pick_external_editor_file(owner)? {
@@ -241,6 +252,7 @@ where
     pub fn handle_viewer_command(&mut self, command: ViewerCommand) -> Result<(), ViewerError> {
         match command {
             ViewerCommand::OpenFileRequested => self.open_file_requested(),
+            ViewerCommand::ReloadRequested => self.reload_requested(),
             ViewerCommand::OpenDroppedFiles(paths) => self.open_dropped_files(paths),
             ViewerCommand::OpenRecentFile(index) => self.open_recent_file(index),
             ViewerCommand::ErrorDismissRequested => self.dismiss_error(),
@@ -1293,6 +1305,58 @@ mod tests {
         assert!(ui.document_html().is_empty());
         assert!(ui.errors().is_empty());
         assert_eq!(shell.recorded_state_count(), 0);
+    }
+
+    #[test]
+    fn reload_request_reloads_current_document_without_opening_file_dialog() {
+        let path = PathBuf::from(r"C:\docs\current.md");
+        let shell = RecordingHtmlShell::new(vec![Ok("<html>reloaded</html>".to_string())]);
+        let ui = RecordingViewerUi::default();
+        let loader = StubDocumentLoader::new(vec![Ok(SourceDocument {
+            path: path.clone(),
+            file_name: "current.md".to_string(),
+            base_dir: PathBuf::from(r"C:\docs"),
+            markdown: "# Updated".to_string(),
+        })]);
+        let renderer = StubMarkdownRenderer::new(vec![Ok(rendered_document("current.md"))]);
+        let dialog = StubFileDialog::cancelled();
+        let mut controller = AppController::with_state(
+            dialog.clone(),
+            loader.clone(),
+            renderer,
+            shell,
+            ui,
+            ViewerState::document_loaded(rendered_document("current.md")),
+        );
+
+        controller
+            .reload_requested()
+            .expect("reload should succeed");
+
+        assert_eq!(dialog.pick_count(), 0);
+        assert_eq!(loader.load_count(), 1);
+        assert_eq!(controller.state().current_document().unwrap().path, path);
+    }
+
+    #[test]
+    fn reload_request_without_document_does_nothing() {
+        let loader = StubDocumentLoader::new(Vec::new());
+        let controller_loader = loader.clone();
+        let mut controller = AppController::with_state(
+            StubFileDialog::cancelled(),
+            controller_loader,
+            StubMarkdownRenderer::new(Vec::new()),
+            RecordingHtmlShell::new(Vec::new()),
+            RecordingViewerUi::default(),
+            ViewerState::NoDocument,
+        );
+
+        controller
+            .reload_requested()
+            .expect("empty reload is a no-op");
+
+        assert_eq!(loader.load_count(), 0);
+        assert!(controller.state().is_no_document());
     }
 
     #[test]

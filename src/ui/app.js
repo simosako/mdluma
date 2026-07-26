@@ -79,6 +79,13 @@ function requestOpenFile() {
   sendNativeCommand("open-file-requested");
 }
 
+function requestReload() {
+  if (!hasLoadedDocument()) {
+    return;
+  }
+  sendNativeCommand("reload-requested");
+}
+
 function openFileButton() {
   return documentQuery('[data-action="open-file"]');
 }
@@ -341,6 +348,8 @@ function handleClick(target) {
       requestExternalEditor();
     } else if (action === "external-editor-setting") {
       requestExternalEditorSetting();
+    } else if (action === "reload") {
+      requestReload();
     } else if (action === "about") {
       setAboutOverlayOpen(true);
     } else if (action === "about-ok") {
@@ -923,6 +932,10 @@ function isOpenFileShortcut(event) {
   return isModifiedLetterShortcut(event, "o");
 }
 
+function isReloadShortcut(event) {
+  return isModifiedLetterShortcut(event, "r");
+}
+
 function isModifiedLetterShortcut(event, letter) {
   if (!event) {
     return false;
@@ -1033,6 +1046,14 @@ function handleKeyboardShortcuts(event) {
     }
 
     requestOpenFile();
+    return;
+  }
+
+  if (isReloadShortcut(event)) {
+    if (hasLoadedDocument()) {
+      event.preventDefault();
+      requestReload();
+    }
     return;
   }
 
