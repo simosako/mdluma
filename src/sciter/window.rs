@@ -5,7 +5,9 @@ use crate::sciter::ffi::{
     HANDLE_EXCHANGE, HANDLE_SCRIPTING_METHOD_CALL, X_DROP, X_WILL_ACCEPT_DROP,
 };
 #[cfg(windows)]
-use crate::sciter::ffi::{set_native_shortcut_dispatch, NATIVE_SHORTCUT_EXTERNAL_EDITOR};
+use crate::sciter::ffi::{
+    set_native_shortcut_dispatch, NATIVE_SHORTCUT_EXTERNAL_EDITOR, NATIVE_SHORTCUT_RELOAD,
+};
 use crate::sciter::runtime::SciterRuntime;
 use crate::settings::BodyFontSettings;
 use crate::{
@@ -132,6 +134,7 @@ impl ViewerCommandBinder for Rc<RefCell<SciterWindow>> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewerCommand {
     OpenFileRequested,
+    ReloadRequested,
     OpenDroppedFiles(Vec<PathBuf>),
     OpenRecentFile(usize),
     ErrorDismissRequested,
@@ -170,6 +173,7 @@ impl ViewerCommand {
     fn from_element_action(action_name: &str) -> Option<Self> {
         match action_name {
             "open-file" => Some(Self::OpenFileRequested),
+            "reload" => Some(Self::ReloadRequested),
             "theme" => Some(Self::ThemeToggleRequested),
             "font" => Some(Self::FontSettingsRequested),
             "external-editor" => Some(Self::ExternalEditorRequested),
@@ -194,6 +198,7 @@ fn parse_scripting_method_call_with(
 ) -> Option<ViewerCommand> {
     match method_name {
         "open-file-requested" => Some(ViewerCommand::OpenFileRequested),
+        "reload-requested" => Some(ViewerCommand::ReloadRequested),
         "theme-toggle-requested" => Some(ViewerCommand::ThemeToggleRequested),
         "external-editor-requested" => Some(ViewerCommand::ExternalEditorRequested),
         "external-editor-setting-requested" => Some(ViewerCommand::ExternalEditorSettingRequested),
@@ -489,6 +494,7 @@ unsafe extern "system" fn dispatch_native_shortcut_from_wndproc(
     let binding = unsafe { &*(ctx as *const HandlerBinding<'static>) };
     let command = match shortcut {
         NATIVE_SHORTCUT_EXTERNAL_EDITOR => ViewerCommand::ExternalEditorRequested,
+        NATIVE_SHORTCUT_RELOAD => ViewerCommand::ReloadRequested,
         _ => return,
     };
     let _ = unsafe { (binding.dispatch_viewer)(binding.handler, command) };
@@ -1046,11 +1052,11 @@ mod tests {
         HandlerBinding, SciterValue, SciterWindow, ViewerCommand, ViewerCommandHandler, ViewerUi,
         WindowChromeAction, HANDLE_BEHAVIOR_EVENT, HANDLE_SCRIPTING_METHOD_CALL,
     };
-    #[cfg(windows)]
-    use crate::sciter::ffi::NATIVE_SHORTCUT_EXTERNAL_EDITOR;
     use crate::sciter::ffi::{
         SciterApi, SciterCallback, SciterWindowHandle, ScriptingMethodParams,
     };
+    #[cfg(windows)]
+    use crate::sciter::ffi::{NATIVE_SHORTCUT_EXTERNAL_EDITOR, NATIVE_SHORTCUT_RELOAD};
     use crate::ViewerError;
     use crate::{WindowChromeController, WindowChromeState};
     use std::cell::RefCell;
@@ -1531,6 +1537,30 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn native_shortcut_dispatches_reload_command() {
+        let app_calls = Rc::new(RefCell::new(Vec::new()));
+        let mut handler = RecordingCommandHandler {
+            calls: app_calls.clone(),
+        };
+        let fake_window_chrome = FakeWindowChrome::default();
+        let mut window = SciterWindow::with_api_and_window_chrome(
+            fake_api(true),
+            Box::new(fake_window_chrome),
+            None,
+        )
+        .expect("create window wrapper");
+
+        window
+            .bind_viewer_command_handler(&mut handler)
+            .expect("bind viewer command handler");
+
+        window.dispatch_test_native_shortcut(NATIVE_SHORTCUT_RELOAD);
+
+        assert_eq!(*app_calls.borrow(), vec![ViewerCommand::ReloadRequested]);
+    }
+
     fn test_extract_string(
         leaked_strings: &std::collections::HashMap<u64, String>,
         value: &SciterValue,
@@ -1681,6 +1711,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_scripting_method_call_maps_reload_requested_to_command() {
+        assert_eq!(
+            parse_scripting_method_call_with("reload-requested", &[], |_| None),
+            Some(ViewerCommand::ReloadRequested)
+        );
+    }
+
+    #[test]
     fn parse_scripting_method_call_maps_theme_toggle_requested_to_command() {
         assert_eq!(
             parse_scripting_method_call_with("theme-toggle-requested", &[], |_| None),
@@ -1703,6 +1741,14 @@ mod tests {
             Some(ViewerCommand::ThemeToggleRequested)
         );
         assert_eq!(ViewerCommand::from_element_action("unknown-action"), None);
+    }
+
+    #[test]
+    fn from_element_action_maps_reload_to_reload_requested() {
+        assert_eq!(
+            ViewerCommand::from_element_action("reload"),
+            Some(ViewerCommand::ReloadRequested)
+        );
     }
 
     #[test]

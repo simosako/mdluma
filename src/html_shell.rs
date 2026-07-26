@@ -58,6 +58,11 @@ impl HtmlShell for DefaultHtmlShell {
         let error_overlay = error_overlay_html(model.state);
         let body_font_style = body_font_css(model.body_font);
         let external_editor_disabled = external_editor_disabled_attr(model.state);
+        let reload_disabled = if model.state.current_document().is_some() {
+            ""
+        } else {
+            "disabled"
+        };
         let recent_files_html = recent_files_html(model.recent_files);
         let app_name = escape_html(model.app_name);
         let current_file_name = escape_html(file_name);
@@ -113,6 +118,7 @@ impl HtmlShell for DefaultHtmlShell {
                 "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.",
             ),
             ("{{EXTERNAL_EDITOR_DISABLED}}", external_editor_disabled),
+            ("{{RELOAD_DISABLED}}", reload_disabled),
             ("{{ERROR_OVERLAY}}", error_overlay.as_str()),
             ("{{RECENT_FILES}}", recent_files_html.as_str()),
         ];
@@ -405,6 +411,7 @@ mod tests {
         assert!(!html.contains("multi-tab-requested"));
         assert!(!html.to_ascii_lowercase().contains("save"));
         assert!(html.contains(r#"data-action="external-editor" disabled"#));
+        assert!(html.contains(r#"data-action="reload" disabled"#));
         assert!(
             html.contains(r#"data-action="external-editor-setting""#),
             "External Editor Setting must always be present in the more menu"
@@ -982,6 +989,7 @@ mod tests {
         assert!(html.contains("data-action=\"external-editor\""));
         assert!(!html.contains("data-action=\"external-editor\" disabled"));
         assert!(html.contains("data-document-loaded=\"true\""));
+        assert!(!html.contains(r#"data-action="reload" disabled"#));
     }
 
     #[test]
