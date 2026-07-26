@@ -469,13 +469,16 @@ impl SciterApi {
         let default_height: i32 = 720;
         let mut frame = if has_cascade {
             let (w, h) = saved_geometry.map_or((default_width, default_height), |geo| {
-                (geo.right - geo.left, geo.bottom - geo.top)
+                (
+                    geo.right.saturating_sub(geo.left),
+                    geo.bottom.saturating_sub(geo.top),
+                )
             });
             SciterRect {
                 left: cascade_left,
                 top: cascade_top,
-                right: cascade_left + w,
-                bottom: cascade_top + h,
+                right: cascade_left.saturating_add(w),
+                bottom: cascade_top.saturating_add(h),
             }
         } else if let Some(geo) = saved_geometry {
             SciterRect {
@@ -492,14 +495,7 @@ impl SciterApi {
                 bottom: 100 + default_height,
             }
         };
-        if !is_on_screen_rect(&frame) {
-            frame = SciterRect {
-                left: 100,
-                top: 100,
-                right: 100 + default_width,
-                bottom: 100 + default_height,
-            };
-        }
+        frame = fit_rect_to_visible_screen(frame);
         let creation_flags = viewer_window_creation_flags();
         self.configure_script_runtime_features()?;
         if should_install_init_script() {
@@ -1191,21 +1187,67 @@ fn read_window_cascade_offset() -> (i32, i32) {
     (left, top)
 }
 
+fn fit_rect_to_visible_screen(rect: SciterRect) -> SciterRect {
+    match virtual_screen_rect() {
+        Some(screen) => clamp_rect_to_screen(rect, screen),
+        None => rect,
+    }
+}
+
+fn clamp_rect_to_screen(mut rect: SciterRect, screen: SciterRect) -> SciterRect {
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return rect;
+    }
+
+    let mut width = rect.right.saturating_sub(rect.left);
+    let mut height = rect.bottom.saturating_sub(rect.top);
+    let screen_width = screen.right.saturating_sub(screen.left);
+    let screen_height = screen.bottom.saturating_sub(screen.top);
+
+    if screen_width <= 0 || screen_height <= 0 {
+        return rect;
+    }
+
+    width = width.min(screen_width);
+    height = height.min(screen_height);
+
+    rect.left = rect
+        .left
+        .clamp(screen.left, screen.right.saturating_sub(width));
+    rect.top = rect
+        .top
+        .clamp(screen.top, screen.bottom.saturating_sub(height));
+    rect.right = rect.left.saturating_add(width);
+    rect.bottom = rect.top.saturating_add(height);
+    rect
+}
+
 #[cfg(windows)]
-fn is_on_screen_rect(rect: &SciterRect) -> bool {
+fn virtual_screen_rect() -> Option<SciterRect> {
     let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
     let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
     let vw = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
     let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
     if vw <= 0 || vh <= 0 {
-        return true;
+        None
+    } else {
+        Some(SciterRect {
+            left: vx,
+            top: vy,
+            right: vx + vw,
+            bottom: vy + vh,
+        })
     }
-    rect.right > vx && rect.left < vx + vw && rect.bottom > vy && rect.top < vy + vh
 }
 
 #[cfg(not(windows))]
-fn is_on_screen_rect(_rect: &SciterRect) -> bool {
-    true
+fn virtual_screen_rect() -> Option<SciterRect> {
+    Some(SciterRect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    })
 }
 
 #[cfg(windows)]
@@ -2135,6 +2177,98 @@ mod tests {
 
         assert_eq!(dispatched, vec![-WHEEL_DELTA]);
         assert_eq!(remainder, -4);
+    }
+
+    #[test]
+    fn clamp_rect_to_screen_moves_negative_saved_geometry_inside_screen() {
+        let screen = SciterRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let rect = SciterRect {
+            left: -359,
+            top: -1804,
+            right: 1844,
+            bottom: -431,
+        };
+
+        let clamped = clamp_rect_to_screen(rect, screen);
+
+        assert_eq!(clamped.left, 0);
+        assert_eq!(clamped.top, 0);
+        assert_eq!(clamped.right, 1920);
+        assert_eq!(clamped.bottom, 1080);
+    }
+
+    #[test]
+    fn clamp_rect_to_screen_keeps_size_when_it_fits() {
+        let screen = SciterRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let rect = SciterRect {
+            left: -20,
+            top: 30,
+            right: 780,
+            bottom: 630,
+        };
+
+        let clamped = clamp_rect_to_screen(rect, screen);
+
+        assert_eq!(clamped.left, 0);
+        assert_eq!(clamped.top, 30);
+        assert_eq!(clamped.right, 800);
+        assert_eq!(clamped.bottom, 630);
+    }
+
+    #[test]
+    fn clamp_rect_to_screen_handles_extreme_geometry_without_overflow() {
+        let screen = SciterRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let rect = SciterRect {
+            left: i32::MIN,
+            top: i32::MIN,
+            right: i32::MAX,
+            bottom: i32::MAX,
+        };
+
+        let clamped = clamp_rect_to_screen(rect, screen);
+
+        assert_eq!(clamped.left, 0);
+        assert_eq!(clamped.top, 0);
+        assert_eq!(clamped.right, 1920);
+        assert_eq!(clamped.bottom, 1080);
+    }
+
+    #[test]
+    fn clamp_rect_to_screen_leaves_invalid_geometry_unchanged() {
+        let screen = SciterRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let rect = SciterRect {
+            left: 500,
+            top: 500,
+            right: 500,
+            bottom: 700,
+        };
+
+        let clamped = clamp_rect_to_screen(rect, screen);
+
+        assert_eq!(clamped.left, rect.left);
+        assert_eq!(clamped.top, rect.top);
+        assert_eq!(clamped.right, rect.right);
+        assert_eq!(clamped.bottom, rect.bottom);
     }
 
     #[test]
