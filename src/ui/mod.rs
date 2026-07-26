@@ -2752,7 +2752,7 @@ if (errorOverlay.style.display !== "none") {
     }
 
     #[test]
-    fn escape_key_ignores_hidden_error_overlay() {
+    fn escape_key_ignores_hidden_error_overlay_and_closes_window() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
             .read_text_asset(UiTextAsset::AppJs)
@@ -2764,6 +2764,10 @@ if (errorOverlay.style.display !== "none") {
 const calls = [];
 const listeners = {};
 const openButton = { addEventListener() {} };
+let closeClicks = 0;
+const closeButton = {
+  click() { closeClicks += 1; },
+};
 const errorOverlay = {
   hidden: true,
   style: { display: "none" },
@@ -2792,6 +2796,9 @@ global.document = {
     if (selector === '[data-action="open-file"]') {
       return openButton;
     }
+    if (selector === '[data-action="window-close"]') {
+      return closeButton;
+    }
     if (selector === "[data-error-overlay]") {
       return errorOverlay;
     }
@@ -2812,8 +2819,11 @@ listeners.keydown({
 if (calls.length !== 0) {
   throw new Error("hidden overlay should not request dismiss: " + JSON.stringify(calls));
 }
-if (prevented !== 0) {
-  throw new Error("hidden overlay should not consume Escape, got " + prevented);
+if (closeClicks !== 1) {
+  throw new Error("Escape should close the window once, got " + closeClicks);
+}
+if (prevented !== 1) {
+  throw new Error("Escape should prevent default once, got " + prevented);
 }
         "#,
         );
