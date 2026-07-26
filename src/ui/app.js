@@ -1080,6 +1080,14 @@ function handleKeyboardShortcuts(event) {
     }
   }
 
+  if (isEscapeKey(event)) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    requestCloseWindow();
+    return;
+  }
+
   handleCopyShortcut(event);
 }
 

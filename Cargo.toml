@@ -1,6 +1,6 @@
 [package]
 name = "mdluma"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2021"
 rust-version = "1.80"
 build = "build.rs"
@@ -11,7 +11,7 @@ name = "mdluma"
 path = "src/main.rs"
 
 [dependencies]
-comrak = { version = "0.52", default-features = false, features = ["syntect"] }
+comrak = { version = "0.54", default-features = false, features = ["syntect-onig"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

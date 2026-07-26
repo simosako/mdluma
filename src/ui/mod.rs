@@ -2107,6 +2107,91 @@ if (prevented !== 1) {
     }
 
     #[test]
+    fn keyboard_shortcut_escape_requests_window_close_once() {
+        let assets = EmbeddedUiAssets::default();
+        let script = assets
+            .read_text_asset(UiTextAsset::AppJs)
+            .expect("read app js");
+
+        let output = run_node_assertions(
+            &script,
+            r#"
+const listeners = {};
+const calls = [];
+let closeClicks = 0;
+
+const closeButton = {
+  click() {
+    closeClicks += 1;
+  },
+};
+
+global.Window = {
+  this: {
+    xcall(name) {
+      calls.push(name);
+    },
+  },
+};
+
+global.document = {
+  readyState: "loading",
+  activeElement: null,
+  on(type, selector, handler) {
+    if (typeof handler === "function") {
+      listeners[type] = handler;
+      return true;
+    }
+    listeners[type] = selector;
+    return true;
+  },
+  addEventListener(type, handler) {
+    listeners[type] = handler;
+  },
+  querySelector(selector) {
+    if (selector === '[data-action="open-file"]') {
+      return { addEventListener() {} };
+    }
+    if (selector === '[data-action="window-close"]') {
+      return closeButton;
+    }
+    return null;
+  },
+};
+
+eval(scriptSource);
+
+let prevented = 0;
+listeners.keydown({
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  key: "Escape",
+  code: "Escape",
+  keyCode: 27,
+  preventDefault() {
+    prevented += 1;
+  },
+});
+
+if (calls.length !== 0) {
+  throw new Error("Escape should not xcall, got: " + JSON.stringify(calls));
+}
+
+if (closeClicks !== 1) {
+  throw new Error("Escape should click close button once, got " + closeClicks);
+}
+
+if (prevented !== 1) {
+  throw new Error("Escape should prevent default once, got " + prevented);
+}
+        "#,
+        );
+
+        assert!(output.status.success(), "{}", output.stderr);
+    }
+
+    #[test]
     fn theme_toggle_click_sends_xcall_to_rust() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
@@ -2667,7 +2752,7 @@ if (errorOverlay.style.display !== "none") {
     }
 
     #[test]
-    fn escape_key_ignores_hidden_error_overlay() {
+    fn escape_key_ignores_hidden_error_overlay_and_closes_window() {
         let assets = EmbeddedUiAssets::default();
         let script = assets
             .read_text_asset(UiTextAsset::AppJs)
@@ -2679,6 +2764,10 @@ if (errorOverlay.style.display !== "none") {
 const calls = [];
 const listeners = {};
 const openButton = { addEventListener() {} };
+let closeClicks = 0;
+const closeButton = {
+  click() { closeClicks += 1; },
+};
 const errorOverlay = {
   hidden: true,
   style: { display: "none" },
@@ -2707,6 +2796,9 @@ global.document = {
     if (selector === '[data-action="open-file"]') {
       return openButton;
     }
+    if (selector === '[data-action="window-close"]') {
+      return closeButton;
+    }
     if (selector === "[data-error-overlay]") {
       return errorOverlay;
     }
@@ -2727,8 +2819,11 @@ listeners.keydown({
 if (calls.length !== 0) {
   throw new Error("hidden overlay should not request dismiss: " + JSON.stringify(calls));
 }
-if (prevented !== 0) {
-  throw new Error("hidden overlay should not consume Escape, got " + prevented);
+if (closeClicks !== 1) {
+  throw new Error("Escape should close the window once, got " + closeClicks);
+}
+if (prevented !== 1) {
+  throw new Error("Escape should prevent default once, got " + prevented);
 }
         "#,
         );
