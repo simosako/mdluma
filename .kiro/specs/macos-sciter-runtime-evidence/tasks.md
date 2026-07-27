@@ -56,7 +56,7 @@
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 4.1, 4.2, 4.7, 7.1, 7.2, 7.3, 7.4_
   - _Boundary: ArtifactProbe_
 
-- [ ] 2.3 artifact probeのfailure matrixを自動テストする（1-3時間）
+- [x] 2.3 artifact probeのfailure matrixを自動テストする（1-3時間）
   - hash mismatch、arm64欠落、canonical path mismatch、command failureをfixture出力で再現する。
   - architecture、minOS、dependency、install name、signatureのraw outputが欠落せず返ることを検証する。
   - provenanceまたはhashを確認できないcaseがFailとなり、unsafe childを実行可能な状態にしないことを確認する。
@@ -302,3 +302,4 @@
 - Task 1.4: 未解決permissionでもsourceは固定revision EULAを明示し、statusだけを`unresolved`として保持する。
 - Task 2.1: system metadata commandは固定absolute pathだけを使用し、Platform gateはTask 2.2完了まで`NotRun`に保つ。
 - Task 2.2: authoritative headersが欠落またはrevision不明ならnetwork fallbackせず、header/ABI evidenceを`NotRun`にする。
+- Task 2.3: 未収集criterionが残っていても既知の`Unsatisfied`はgateを`Fail`にできるが、不完全な入力から`Pass`は生成しない。

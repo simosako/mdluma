@@ -994,12 +994,7 @@ fn populate_results(bundle: &mut ProbeBundle) {
         "runtime SHA-256",
     ));
     bundle.gates.push(gate(GateId::Artifact, &bundle.criteria));
-    bundle.gates.push(GateResult::new(
-        GateId::Platform,
-        GateStatus::NotRun,
-        GateId::Platform.criteria().to_vec(),
-        "platform gate requires host process checks from Task 2.2",
-    ));
+    bundle.gates.push(gate(GateId::Platform, &bundle.criteria));
 }
 
 fn result(

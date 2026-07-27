@@ -1172,16 +1172,14 @@ fn artifact_probe_collects_typed_metadata_and_lossless_command_artifacts() {
 
 #[test]
 fn artifact_probe_hash_mismatch_and_arm64_absence_fail_their_typed_gates() {
-    let (repository, runtime) = artifact_fixture("artifact-mismatch");
+    let (repository, runtime) = artifact_fixture("artifact-hash-mismatch");
     let runner = FixtureCommandRunner::successful();
     runner.captures.borrow_mut()[0].stdout = format!("{}  runtime\n", "0".repeat(64)).into_bytes();
-    runner.captures.borrow_mut()[1].stdout = b"x86_64\n".to_vec();
 
     let bundle = probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
 
     assert!(!bundle.hash_matches);
     assert_eq!(bundle.gates[0].status(), GateStatus::Fail);
-    assert_eq!(bundle.gates[1].status(), GateStatus::NotRun);
     assert_eq!(
         bundle
             .criteria
@@ -1191,6 +1189,15 @@ fn artifact_probe_hash_mismatch_and_arm64_absence_fail_their_typed_gates() {
             .status(),
         CriterionStatus::Unsatisfied
     );
+
+    let (repository, runtime) = artifact_fixture("artifact-arm64-absent");
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut()[1].stdout = b"x86_64\n".to_vec();
+
+    let bundle = probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+
+    assert_eq!(bundle.gates[0].status(), GateStatus::Pass);
+    assert_eq!(bundle.gates[1].status(), GateStatus::Fail);
     assert_eq!(
         bundle
             .criteria
@@ -1250,43 +1257,84 @@ fn artifact_probe_missing_or_nonzero_command_is_fail_closed_and_keeps_raw_status
 #[test]
 fn every_artifact_command_failure_is_typed_and_cannot_pass_an_owned_gate() {
     let affected_criteria = [(1, 5), (2, 1), (2, 5), (2, 6), (2, 7), (2, 8)];
-    for (command_index, (requirement, criterion)) in affected_criteria.into_iter().enumerate() {
-        let (repository, runtime) = artifact_fixture("artifact-each-command-failure");
-        let runner = FixtureCommandRunner::successful();
-        runner.captures.borrow_mut()[command_index].status =
-            CommandStatus::NotStarted("command not found".to_owned());
+    let artifact_names = [
+        "shasum",
+        "lipo",
+        "otool-load",
+        "otool-dependencies",
+        "otool-install-name",
+        "codesign",
+    ];
+    for failure_status in [
+        CommandStatus::NotStarted("command not found".to_owned()),
+        CommandStatus::Exited(23),
+    ] {
+        for (command_index, (requirement, criterion)) in affected_criteria.into_iter().enumerate() {
+            let (repository, runtime) = artifact_fixture("artifact-each-command-failure");
+            let runner = FixtureCommandRunner::successful();
+            let stdout = format!("failure stdout {command_index}\n");
+            let stderr = format!("failure stderr {command_index}\n");
+            let mut captures = runner.captures.borrow_mut();
+            captures[command_index].stdout = stdout.as_bytes().to_vec();
+            captures[command_index].stderr = stderr.as_bytes().to_vec();
+            captures[command_index].status = failure_status.clone();
+            drop(captures);
 
-        let bundle =
-            probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+            let bundle =
+                probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
 
-        assert_eq!(
-            bundle
-                .criteria
-                .iter()
-                .find(|result| { result.id() == CriterionId::from_parts(requirement, criterion) })
-                .unwrap()
-                .status(),
-            CriterionStatus::NotRun,
-            "command index {command_index}"
-        );
-        let owned_gate = if requirement == 1 {
-            GateId::Artifact
-        } else {
-            GateId::Platform
-        };
-        assert_ne!(
-            bundle
-                .gates
-                .iter()
-                .find(|gate| gate.id() == owned_gate)
-                .unwrap()
-                .status(),
-            GateStatus::Pass
-        );
-        assert_eq!(
-            bundle.command_captures[command_index].status,
-            CommandStatus::NotStarted("command not found".to_owned())
-        );
+            assert_eq!(
+                bundle
+                    .criteria
+                    .iter()
+                    .find(|result| {
+                        result.id() == CriterionId::from_parts(requirement, criterion)
+                    })
+                    .unwrap()
+                    .status(),
+                CriterionStatus::NotRun,
+                "command index {command_index}"
+            );
+            let owned_gate = if requirement == 1 {
+                GateId::Artifact
+            } else {
+                GateId::Platform
+            };
+            assert_ne!(
+                bundle
+                    .gates
+                    .iter()
+                    .find(|gate| gate.id() == owned_gate)
+                    .unwrap()
+                    .status(),
+                GateStatus::Pass
+            );
+            assert_eq!(
+                bundle.command_captures[command_index].status,
+                failure_status
+            );
+            for (suffix, expected) in [
+                ("stdout", stdout.as_bytes()),
+                ("stderr", stderr.as_bytes()),
+                ("status", format!("{failure_status:?}\n").as_bytes()),
+            ] {
+                let path = PathBuf::from(format!(
+                    "metadata/{}.{suffix}",
+                    artifact_names[command_index]
+                ));
+                assert_eq!(
+                    bundle
+                        .raw_artifacts
+                        .iter()
+                        .find(|artifact| artifact.relative_path == path)
+                        .unwrap()
+                        .bytes,
+                    expected,
+                    "{}",
+                    path.display()
+                );
+            }
+        }
     }
 }
 
