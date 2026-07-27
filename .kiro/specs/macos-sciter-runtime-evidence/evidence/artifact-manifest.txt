@@ -1,0 +1,12 @@
+schema_version=1
+repository=https://gitlab.com/sciter-engine/sciter-js-sdk
+commit=e31ec0f726bdbe5d0402ad647f3b34feef84654e
+sdk_relative_path=bin/macosx/libsciter.dylib
+workspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib
+sha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b
+engine_version=6.0.3.18
+api_version=10
+version_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h
+api_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h
+version_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h
+api_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h

@@ -4,11 +4,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::manifest::parse_artifact_manifest;
 use crate::model::{
     validate_criterion_results, CriterionId, CriterionResult, CriterionStatus, CycleKind,
     CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent, RunId,
     ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
 };
+
+const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
 
 struct TestDirectory {
     path: PathBuf,
@@ -533,4 +536,172 @@ fn shared_status_and_error_types_retain_typed_state() {
             cycle: 17,
         }
     ));
+}
+
+#[test]
+fn initial_artifact_manifest_parses_to_the_fixed_baseline() {
+    let manifest_path = toolkit_dir()
+        .join("../..")
+        .join(".kiro/specs/macos-sciter-runtime-evidence/evidence/artifact-manifest.txt");
+    let input = fs::read_to_string(manifest_path).expect("read initial artifact manifest");
+    let manifest = parse_artifact_manifest(&input).expect("parse initial artifact manifest");
+
+    assert_eq!(manifest.schema_version(), 1);
+    assert_eq!(
+        manifest.repository(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk"
+    );
+    assert_eq!(
+        manifest.commit(),
+        "e31ec0f726bdbe5d0402ad647f3b34feef84654e"
+    );
+    assert_eq!(
+        manifest.sdk_relative_path(),
+        Path::new("bin/macosx/libsciter.dylib")
+    );
+    assert_eq!(
+        manifest.workspace_relative_path(),
+        Path::new("vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib")
+    );
+    assert_eq!(
+        manifest.sha256(),
+        "be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b"
+    );
+    assert_eq!(manifest.engine_version(), [6, 0, 3, 18]);
+    assert_eq!(manifest.api_version(), 10);
+    assert_eq!(
+        manifest.version_header_path(),
+        Path::new("vendor/sciter-js-sdk-main/include/sciter-version.h")
+    );
+    assert_eq!(
+        manifest.api_header_path(),
+        Path::new("vendor/sciter-js-sdk-main/include/sciter-x-api.h")
+    );
+    assert_eq!(
+        manifest.version_header_source(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h"
+    );
+    assert_eq!(
+        manifest.api_header_source(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h"
+    );
+}
+
+#[test]
+fn artifact_manifest_rejects_unknown_duplicate_missing_and_malformed_lines() {
+    let unknown = format!("{ARTIFACT_MANIFEST}extra=value\n");
+    let duplicate = format!("{ARTIFACT_MANIFEST}api_version=10\n");
+    let missing = ARTIFACT_MANIFEST.replace("api_version=10\n", "");
+
+    for input in [
+        unknown,
+        duplicate,
+        missing,
+        format!("{ARTIFACT_MANIFEST}broken\n"),
+    ] {
+        assert!(matches!(
+            parse_artifact_manifest(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
+}
+
+#[test]
+fn artifact_manifest_rejects_malformed_hash_versions_numbers_and_paths() {
+    let invalid_inputs = [
+        ARTIFACT_MANIFEST.replace(
+            "sha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b",
+            "sha256=not-a-sha256",
+        ),
+        ARTIFACT_MANIFEST.replace("engine_version=6.0.3.18", "engine_version=6.0.3"),
+        ARTIFACT_MANIFEST.replace("api_version=10", "api_version=ten"),
+        ARTIFACT_MANIFEST.replace("schema_version=1", "schema_version=one"),
+        ARTIFACT_MANIFEST.replace(
+            "sdk_relative_path=bin/macosx/libsciter.dylib",
+            "sdk_relative_path=/bin/macosx/libsciter.dylib",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "workspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib",
+            "workspace_relative_path=vendor/../libsciter.dylib",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "version_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h",
+            "version_header_path=",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "api_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h",
+            "api_header_path=C:\\sciter-x-api.h",
+        ),
+    ];
+
+    for input in invalid_inputs {
+        assert!(matches!(
+            parse_artifact_manifest(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
+}
+
+#[test]
+fn artifact_manifest_rejects_well_formed_values_outside_the_fixed_baseline() {
+    let mismatches = [
+        ARTIFACT_MANIFEST.replace("schema_version=1", "schema_version=2"),
+        ARTIFACT_MANIFEST.replace(
+            "repository=https://gitlab.com/sciter-engine/sciter-js-sdk",
+            "repository=https://example.com/sciter-js-sdk",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "commit=e31ec0f726bdbe5d0402ad647f3b34feef84654e",
+            "commit=031ec0f726bdbe5d0402ad647f3b34feef84654e",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "sha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b",
+            "sha256=0e5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b",
+        ),
+        ARTIFACT_MANIFEST.replace("engine_version=6.0.3.18", "engine_version=6.0.3.19"),
+        ARTIFACT_MANIFEST.replace("api_version=10", "api_version=11"),
+        ARTIFACT_MANIFEST.replace(
+            "version_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h",
+            "version_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/031ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h",
+        ),
+    ];
+
+    for input in mismatches {
+        assert!(matches!(
+            parse_artifact_manifest(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
+}
+
+#[test]
+fn artifact_manifest_rejects_noncanonical_fixed_value_representations() {
+    let noncanonical_inputs = [
+        ARTIFACT_MANIFEST.replace("schema_version=1", "schema_version=01"),
+        ARTIFACT_MANIFEST.replace("api_version=10", "api_version=010"),
+        ARTIFACT_MANIFEST.replace("engine_version=6.0.3.18", "engine_version=6.00.3.18"),
+        ARTIFACT_MANIFEST.replace(
+            "sdk_relative_path=bin/macosx/libsciter.dylib",
+            "sdk_relative_path=bin//macosx/libsciter.dylib",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "workspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib",
+            "workspace_relative_path=vendor/sciter-js-sdk-main//bin/macosx/libsciter.dylib",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "version_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h",
+            "version_header_path=vendor/sciter-js-sdk-main//include/sciter-version.h",
+        ),
+        ARTIFACT_MANIFEST.replace(
+            "api_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h",
+            "api_header_path=vendor/sciter-js-sdk-main//include/sciter-x-api.h",
+        ),
+    ];
+
+    for input in noncanonical_inputs {
+        assert!(matches!(
+            parse_artifact_manifest(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
 }

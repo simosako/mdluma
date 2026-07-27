@@ -2,6 +2,72 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ArtifactManifest {
+    pub(crate) schema_version: u32,
+    pub(crate) repository: String,
+    pub(crate) commit: String,
+    pub(crate) sdk_relative_path: PathBuf,
+    pub(crate) workspace_relative_path: PathBuf,
+    pub(crate) sha256: String,
+    pub(crate) engine_version: [u32; 4],
+    pub(crate) api_version: u32,
+    pub(crate) version_header_path: PathBuf,
+    pub(crate) api_header_path: PathBuf,
+    pub(crate) version_header_source: String,
+    pub(crate) api_header_source: String,
+}
+
+impl ArtifactManifest {
+    pub(crate) const fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    pub(crate) fn repository(&self) -> &str {
+        &self.repository
+    }
+
+    pub(crate) fn commit(&self) -> &str {
+        &self.commit
+    }
+
+    pub(crate) fn sdk_relative_path(&self) -> &std::path::Path {
+        &self.sdk_relative_path
+    }
+
+    pub(crate) fn workspace_relative_path(&self) -> &std::path::Path {
+        &self.workspace_relative_path
+    }
+
+    pub(crate) fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub(crate) const fn engine_version(&self) -> [u32; 4] {
+        self.engine_version
+    }
+
+    pub(crate) const fn api_version(&self) -> u32 {
+        self.api_version
+    }
+
+    pub(crate) fn version_header_path(&self) -> &std::path::Path {
+        &self.version_header_path
+    }
+
+    pub(crate) fn api_header_path(&self) -> &std::path::Path {
+        &self.api_header_path
+    }
+
+    pub(crate) fn version_header_source(&self) -> &str {
+        &self.version_header_source
+    }
+
+    pub(crate) fn api_header_source(&self) -> &str {
+        &self.api_header_source
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CriterionStatus {
     Satisfied,

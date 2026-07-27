@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+mod manifest;
 mod model;
 
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]

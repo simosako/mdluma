@@ -18,7 +18,7 @@
   - _Requirements: 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 7.8, 7.9, 7.11, 7.12, 8.1, 8.2, 8.3_
   - _Boundary: Evidence Types_
 
-- [ ] 1.3 固定artifact manifestのstrict input contractを実装する（1-3時間）
+- [x] 1.3 固定artifact manifestのstrict input contractを実装する（1-3時間）
   - schema version、公式repository、固定commit、SDK内path、workspace内path、SHA-256、engine/API version、同revision header情報を必須入力にする。
   - repositoryを`https://gitlab.com/sciter-engine/sciter-js-sdk`、commitを`e31ec0f726bdbe5d0402ad647f3b34feef84654e`として固定する。
   - runtime path、期待SHA-256、engine version 6.0.3.18、API version 10を固定値として保持する。
@@ -298,3 +298,4 @@
 
 - Task 1.1: Rust stableは`mise`管理下にあり、task-local verificationは`mise exec rust@stable -- ...`で実行する。
 - Task 1.2: Evidence Typesは静的catalogと型検証だけを所有し、67 criterion/8 gateのcompleteness判定はTask 7.2のDecisionEvaluatorに残す。
+- Task 1.3: 固定manifestはtyped値だけでなく全12 fieldのraw canonical textも一致させ、正規化で同値になる入力を拒否する。
