@@ -7,8 +7,9 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::artifact::{
-    parse_minimum_versions, probe_artifact_with_runner, CodeSigningState, CommandCapture,
-    CommandRunner, CommandStatus, SystemCommandRunner,
+    parse_minimum_versions, probe_artifact_with_runner, probe_artifact_with_runner_at,
+    CodeSigningState, CommandCapture, CommandRunner, CommandStatus, HeaderProbeOutcome,
+    SystemCommandRunner,
 };
 use crate::manifest::{parse_artifact_manifest, parse_license_evidence};
 use crate::model::{
@@ -101,6 +102,31 @@ fn artifact_fixture(label: &str) -> (TestDirectory, PathBuf) {
     fs::create_dir_all(runtime.parent().unwrap()).unwrap();
     fs::write(&runtime, b"fixture runtime").unwrap();
     (test_dir, runtime)
+}
+
+fn write_header_fixture(repository: &TestDirectory, version: [u32; 4], api: u32) {
+    let include = repository.path.join("vendor/sciter-js-sdk-main/include");
+    fs::create_dir_all(&include).unwrap();
+    fs::write(
+        include.join("sciter-version.h"),
+        format!(
+            "#define SCITER_VERSION_0 {}\n#define SCITER_VERSION_1 {}\n#define SCITER_VERSION_2 {}\n#define SCITER_VERSION_3 {}\n",
+            version[0], version[1], version[2], version[3]
+        ),
+    )
+    .unwrap();
+    fs::write(
+        include.join("sciter-x-api.h"),
+        format!("#define SCITER_API_VERSION {api}\n"),
+    )
+    .unwrap();
+    let bindings = repository.path.join("src/sciter");
+    fs::create_dir_all(&bindings).unwrap();
+    fs::write(
+        bindings.join("generated_sciter_bindings.rs"),
+        "pub const SCITER_VERSION_0: u32 = 6;\npub const SCITER_VERSION_1: u32 = 0;\npub const SCITER_VERSION_2: u32 = 3;\npub const SCITER_VERSION_3: u32 = 18;\npub const SCITER_API_VERSION: u32 = 10;\n",
+    )
+    .unwrap();
 }
 
 fn fixed_manifest() -> crate::model::ArtifactManifest {
@@ -1300,5 +1326,249 @@ fn minimum_macos_parser_supports_legacy_commands_and_ignores_unrelated_versions(
             ("x86_64".to_owned(), "10.13".to_owned()),
             ("arm64".to_owned(), "11.5".to_owned()),
         ]
+    );
+}
+
+#[test]
+fn host_snapshot_and_same_revision_headers_are_returned_in_the_probe_bundle() {
+    let (repository, runtime) = artifact_fixture("host-headers");
+    write_header_fixture(&repository, [6, 0, 3, 18], 10);
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut().extend([
+        capture("sysctl", "Mac15,7\n", "sysctl diagnostic\n", 0),
+        capture("sw_vers", "15.6\n", "sw_vers diagnostic\n", 0),
+        capture("uname", "arm64\n", "uname diagnostic\n", 0),
+    ]);
+
+    let bundle = probe_artifact_with_runner_at(
+        &fixed_manifest(),
+        &repository.path,
+        &runtime,
+        &runner,
+        UNIX_EPOCH,
+    );
+
+    assert_eq!(bundle.started_at_utc, "1970-01-01T00:00:00Z");
+    assert_eq!(bundle.host.hardware, "Mac15,7");
+    assert_eq!(bundle.host.macos_version, "15.6");
+    assert_eq!(bundle.host.process_architecture, "arm64");
+    let HeaderProbeOutcome::Verified(headers) = bundle.header_evidence else {
+        panic!("same-revision headers should be verified");
+    };
+    assert_eq!(headers.commit, fixed_manifest().commit);
+    assert_eq!(headers.engine_version, [6, 0, 3, 18]);
+    assert_eq!(headers.api_version, 10);
+    for id in [(2, 3), (2, 4), (3, 1), (3, 2), (4, 1), (4, 2)] {
+        assert_eq!(
+            bundle
+                .criteria
+                .iter()
+                .find(|result| result.id() == CriterionId::from_parts(id.0, id.1))
+                .unwrap()
+                .status(),
+            CriterionStatus::Satisfied,
+            "criterion {}.{}",
+            id.0,
+            id.1
+        );
+    }
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(4, 7))
+            .unwrap()
+            .status(),
+        CriterionStatus::NotApplicable
+    );
+    assert!(bundle.raw_artifacts.iter().any(|artifact| {
+        artifact.relative_path == Path::new("metadata/host/sysctl-hardware.stderr")
+            && artifact.bytes == b"sysctl diagnostic\n"
+    }));
+    assert!(bundle.raw_artifacts.iter().any(|artifact| {
+        artifact.relative_path == Path::new("metadata/headers/sciter-version.h")
+            && artifact.bytes.starts_with(b"#define SCITER_VERSION_0")
+    }));
+}
+
+#[test]
+fn missing_headers_are_observable_not_run_results_without_network_fallback() {
+    let (repository, runtime) = artifact_fixture("missing-headers");
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut().extend([
+        capture("sysctl", "Mac15,7\n", "", 0),
+        capture("sw_vers", "15.6\n", "", 0),
+        capture("uname", "arm64\n", "", 0),
+    ]);
+
+    let bundle = probe_artifact_with_runner_at(
+        &fixed_manifest(),
+        &repository.path,
+        &runtime,
+        &runner,
+        UNIX_EPOCH,
+    );
+
+    assert!(matches!(
+        bundle.header_evidence,
+        HeaderProbeOutcome::NotRun { .. }
+    ));
+    for id in [(4, 1), (4, 2), (4, 7)] {
+        assert_eq!(
+            bundle
+                .criteria
+                .iter()
+                .find(|result| result.id() == CriterionId::from_parts(id.0, id.1))
+                .unwrap()
+                .status(),
+            CriterionStatus::NotRun
+        );
+    }
+    assert_eq!(
+        bundle
+            .gates
+            .iter()
+            .find(|gate| gate.id() == GateId::Abi)
+            .unwrap()
+            .status(),
+        GateStatus::NotRun
+    );
+    assert_eq!(
+        runner.calls().len(),
+        9,
+        "header absence must not trigger commands"
+    );
+}
+
+#[test]
+fn header_binding_or_manifest_disagreement_fails_closed() {
+    let (repository, runtime) = artifact_fixture("header-mismatch");
+    write_header_fixture(&repository, [6, 0, 3, 19], 10);
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut().extend([
+        capture("sysctl", "Mac15,7\n", "", 0),
+        capture("sw_vers", "15.6\n", "", 0),
+        capture("uname", "arm64\n", "", 0),
+    ]);
+
+    let bundle = probe_artifact_with_runner_at(
+        &fixed_manifest(),
+        &repository.path,
+        &runtime,
+        &runner,
+        UNIX_EPOCH,
+    );
+
+    assert!(matches!(
+        bundle.header_evidence,
+        HeaderProbeOutcome::Disagreed { .. }
+    ));
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(4, 1))
+            .unwrap()
+            .status(),
+        CriterionStatus::Unsatisfied
+    );
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(4, 7))
+            .unwrap()
+            .status(),
+        CriterionStatus::Unsatisfied
+    );
+}
+
+#[test]
+fn ambiguous_authoritative_header_define_is_not_accepted() {
+    let (repository, runtime) = artifact_fixture("ambiguous-header");
+    write_header_fixture(&repository, [6, 0, 3, 18], 10);
+    let version_header = repository
+        .path
+        .join("vendor/sciter-js-sdk-main/include/sciter-version.h");
+    let mut contents = fs::read_to_string(&version_header).unwrap();
+    contents.push_str("#define SCITER_VERSION_0 6\n");
+    fs::write(version_header, contents).unwrap();
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut().extend([
+        capture("sysctl", "Mac15,7\n", "", 0),
+        capture("sw_vers", "15.6\n", "", 0),
+        capture("uname", "arm64\n", "", 0),
+    ]);
+
+    let bundle = probe_artifact_with_runner_at(
+        &fixed_manifest(),
+        &repository.path,
+        &runtime,
+        &runner,
+        UNIX_EPOCH,
+    );
+
+    assert!(matches!(
+        bundle.header_evidence,
+        HeaderProbeOutcome::NotRun { .. }
+    ));
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(4, 1))
+            .unwrap()
+            .status(),
+        CriterionStatus::NotRun
+    );
+}
+
+#[test]
+fn host_commands_use_only_fixed_absolute_production_paths() {
+    assert_eq!(
+        SystemCommandRunner::program_path("sysctl"),
+        Some("/usr/sbin/sysctl")
+    );
+    assert_eq!(
+        SystemCommandRunner::program_path("sw_vers"),
+        Some("/usr/bin/sw_vers")
+    );
+    assert_eq!(
+        SystemCommandRunner::program_path("uname"),
+        Some("/usr/bin/uname")
+    );
+}
+
+#[test]
+fn unestablished_header_revision_is_not_run_even_when_files_exist() {
+    let (repository, runtime) = artifact_fixture("header-identity");
+    write_header_fixture(&repository, [6, 0, 3, 18], 10);
+    let mut manifest = fixed_manifest();
+    manifest.version_header_source = manifest.version_header_source.replace(
+        "e31ec0f726bdbe5d0402ad647f3b34feef84654e",
+        "031ec0f726bdbe5d0402ad647f3b34feef84654e",
+    );
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut().extend([
+        capture("sysctl", "Mac15,7\n", "", 0),
+        capture("sw_vers", "15.6\n", "", 0),
+        capture("uname", "arm64\n", "", 0),
+    ]);
+
+    let bundle =
+        probe_artifact_with_runner_at(&manifest, &repository.path, &runtime, &runner, UNIX_EPOCH);
+
+    assert!(matches!(
+        bundle.header_evidence,
+        HeaderProbeOutcome::NotRun { .. }
+    ));
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(4, 1))
+            .unwrap()
+            .status(),
+        CriterionStatus::NotRun
     );
 }

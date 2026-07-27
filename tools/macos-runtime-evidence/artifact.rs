@@ -3,10 +3,11 @@ use std::fs;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::model::{
     ArtifactManifest, CriterionId, CriterionResult, CriterionStatus, GateId, GateResult,
-    GateStatus, NamedArtifact,
+    GateStatus, HeaderEvidence, HostSnapshot, NamedArtifact,
 };
 
 const OFFICIAL_REPOSITORY: &str = "https://gitlab.com/sciter-engine/sciter-js-sdk";
@@ -48,6 +49,9 @@ impl SystemCommandRunner {
             "lipo" => Some("/usr/bin/lipo"),
             "otool" => Some("/usr/bin/otool"),
             "codesign" => Some("/usr/bin/codesign"),
+            "sysctl" => Some("/usr/sbin/sysctl"),
+            "sw_vers" => Some("/usr/bin/sw_vers"),
+            "uname" => Some("/usr/bin/uname"),
             _ => None,
         }
     }
@@ -114,6 +118,23 @@ pub(crate) struct ProbeBundle {
     pub(crate) gates: Vec<GateResult>,
     pub(crate) raw_artifacts: Vec<NamedArtifact>,
     pub(crate) command_captures: Vec<CommandCapture>,
+    pub(crate) started_at_utc: String,
+    pub(crate) host: HostSnapshot,
+    pub(crate) header_evidence: HeaderProbeOutcome,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HeaderProbeOutcome {
+    Verified(HeaderEvidence),
+    Disagreed {
+        header_engine_version: [u32; 4],
+        header_api_version: u32,
+        bindings_engine_version: [u32; 4],
+        bindings_api_version: u32,
+    },
+    NotRun {
+        reason: String,
+    },
 }
 
 pub(crate) fn probe_artifact(
@@ -121,12 +142,26 @@ pub(crate) fn probe_artifact(
     repository_root: &Path,
     runtime_path: &Path,
 ) -> ProbeBundle {
-    probe_artifact_with_runner(
+    probe_artifact_with_runner_at(
         manifest,
         repository_root,
         runtime_path,
         &SystemCommandRunner,
+        SystemTime::now(),
     )
+}
+
+pub(crate) fn probe_artifact_with_runner_at<R: CommandRunner>(
+    manifest: &ArtifactManifest,
+    repository_root: &Path,
+    runtime_path: &Path,
+    runner: &R,
+    started_at: SystemTime,
+) -> ProbeBundle {
+    let mut bundle = probe_artifact_with_runner(manifest, repository_root, runtime_path, runner);
+    collect_host(&mut bundle, runner, started_at);
+    collect_headers(&mut bundle, manifest, repository_root);
+    bundle
 }
 
 pub(crate) fn probe_artifact_with_runner<R: CommandRunner>(
@@ -164,6 +199,11 @@ pub(crate) fn probe_artifact_with_runner<R: CommandRunner>(
         gates: Vec::new(),
         raw_artifacts: Vec::new(),
         command_captures: Vec::new(),
+        started_at_utc: String::new(),
+        host: HostSnapshot::default(),
+        header_evidence: HeaderProbeOutcome::NotRun {
+            reason: "host and header probe not run".to_owned(),
+        },
     };
 
     if !provenance_valid || !path_matches {
@@ -214,6 +254,417 @@ pub(crate) fn probe_artifact_with_runner<R: CommandRunner>(
 
     populate_results(&mut bundle);
     bundle
+}
+
+fn collect_host<R: CommandRunner>(bundle: &mut ProbeBundle, runner: &R, started_at: SystemTime) {
+    let captures = [
+        runner.run("sysctl", &["-n".into(), "hw.model".into()]),
+        runner.run("sw_vers", &["-productVersion".into()]),
+        runner.run("uname", &["-m".into()]),
+    ];
+    let names = ["sysctl-hardware", "sw-vers", "uname-architecture"];
+    for (name, capture) in names.into_iter().zip(&captures) {
+        append_capture_artifacts(&mut bundle.raw_artifacts, "metadata/host", name, capture);
+    }
+    bundle.command_captures.extend(captures);
+
+    let host_start = bundle.command_captures.len() - 3;
+    bundle.host.hardware = capture_single_line(&bundle.command_captures[host_start])
+        .unwrap_or_default()
+        .to_owned();
+    bundle.host.macos_version = capture_single_line(&bundle.command_captures[host_start + 1])
+        .unwrap_or_default()
+        .to_owned();
+    bundle.host.process_architecture =
+        capture_single_line(&bundle.command_captures[host_start + 2])
+            .unwrap_or_default()
+            .to_owned();
+    bundle.started_at_utc = format_utc(started_at).unwrap_or_default();
+    bundle.raw_artifacts.push(named(
+        "metadata/host/executed-at-utc.txt".to_owned(),
+        format!("{}\n", bundle.started_at_utc).into_bytes(),
+    ));
+
+    upsert_result(
+        &mut bundle.criteria,
+        result(
+            2,
+            3,
+            present_status(&bundle.host.process_architecture),
+            "recorded process architecture",
+        ),
+    );
+    upsert_result(
+        &mut bundle.criteria,
+        result(
+            2,
+            4,
+            if bundle.host.process_architecture.is_empty() {
+                CriterionStatus::NotRun
+            } else if bundle.host.process_architecture == "arm64" {
+                CriterionStatus::Satisfied
+            } else {
+                CriterionStatus::Unsatisfied
+            },
+            "native arm64 process architecture",
+        ),
+    );
+    for (criterion, value, summary) in [
+        (1, bundle.started_at_utc.as_str(), "UTC execution time"),
+        (2, bundle.host.hardware.as_str(), "recorded hardware"),
+        (
+            3,
+            bundle.host.macos_version.as_str(),
+            "recorded macOS version",
+        ),
+        (
+            4,
+            bundle.host.process_architecture.as_str(),
+            "recorded process architecture",
+        ),
+    ] {
+        upsert_result(
+            &mut bundle.criteria,
+            result(7, criterion, present_status(value), summary),
+        );
+    }
+    replace_gate(
+        bundle,
+        GateId::Platform,
+        "artifact and host platform checks",
+    );
+}
+
+fn collect_headers(bundle: &mut ProbeBundle, manifest: &ArtifactManifest, repository_root: &Path) {
+    upsert_result(
+        &mut bundle.criteria,
+        result(
+            3,
+            1,
+            if manifest.engine_version == [6, 0, 3, 18] {
+                CriterionStatus::Satisfied
+            } else {
+                CriterionStatus::Unsatisfied
+            },
+            "expected engine version 6.0.3.18",
+        ),
+    );
+    upsert_result(
+        &mut bundle.criteria,
+        result(
+            3,
+            2,
+            if manifest.api_version == 10 {
+                CriterionStatus::Satisfied
+            } else {
+                CriterionStatus::Unsatisfied
+            },
+            "expected API version 10",
+        ),
+    );
+
+    let identity_result = validate_header_identity(manifest);
+    let version_path = repository_root.join(&manifest.version_header_path);
+    let api_path = repository_root.join(&manifest.api_header_path);
+    let bindings_path = repository_root.join("src/sciter/generated_sciter_bindings.rs");
+    let sources = [
+        ("sciter-version.h", version_path),
+        ("sciter-x-api.h", api_path),
+        ("generated-sciter-bindings.rs", bindings_path),
+    ];
+    let mut bytes = Vec::new();
+    let mut read_error = None;
+    for (name, path) in sources {
+        match fs::read(&path) {
+            Ok(source) => {
+                bundle
+                    .raw_artifacts
+                    .push(named(format!("metadata/headers/{name}"), source.clone()));
+                bytes.push(source);
+            }
+            Err(error) => {
+                read_error = Some(format!("{}: {error}", path.display()));
+                break;
+            }
+        }
+    }
+
+    let parsed = identity_result.and_then(|()| {
+        if let Some(reason) = read_error {
+            return Err(reason);
+        }
+        let header_engine = parse_engine_defines(&bytes[0])?;
+        let header_api = parse_c_define(&bytes[1], "SCITER_API_VERSION")?;
+        let bindings_engine = parse_bindings_engine_constants(&bytes[2])?;
+        let bindings_api = parse_rust_constant(&bytes[2], "SCITER_API_VERSION")?;
+        Ok((header_engine, header_api, bindings_engine, bindings_api))
+    });
+
+    match parsed {
+        Ok((header_engine, header_api, bindings_engine, bindings_api)) => {
+            let engine_matches =
+                header_engine == bindings_engine && header_engine == manifest.engine_version;
+            let api_matches = header_api == bindings_api && header_api == manifest.api_version;
+            if engine_matches && api_matches {
+                let raw_artifacts = bundle
+                    .raw_artifacts
+                    .iter()
+                    .filter(|artifact| artifact.relative_path.starts_with("metadata/headers"))
+                    .cloned()
+                    .collect();
+                bundle.header_evidence = HeaderProbeOutcome::Verified(HeaderEvidence {
+                    commit: manifest.commit.clone(),
+                    engine_version: header_engine,
+                    api_version: header_api,
+                    raw_artifacts,
+                });
+                upsert_header_results(
+                    bundle,
+                    CriterionStatus::Satisfied,
+                    CriterionStatus::Satisfied,
+                    CriterionStatus::NotApplicable,
+                );
+            } else {
+                bundle.header_evidence = HeaderProbeOutcome::Disagreed {
+                    header_engine_version: header_engine,
+                    header_api_version: header_api,
+                    bindings_engine_version: bindings_engine,
+                    bindings_api_version: bindings_api,
+                };
+                upsert_header_results(
+                    bundle,
+                    if engine_matches {
+                        CriterionStatus::Satisfied
+                    } else {
+                        CriterionStatus::Unsatisfied
+                    },
+                    if api_matches {
+                        CriterionStatus::Satisfied
+                    } else {
+                        CriterionStatus::Unsatisfied
+                    },
+                    CriterionStatus::Unsatisfied,
+                );
+            }
+        }
+        Err(reason) => {
+            bundle.header_evidence = HeaderProbeOutcome::NotRun { reason };
+            upsert_header_results(
+                bundle,
+                CriterionStatus::NotRun,
+                CriterionStatus::NotRun,
+                CriterionStatus::NotRun,
+            );
+        }
+    }
+    replace_gate(
+        bundle,
+        GateId::Api,
+        "expected API baseline and runtime checks",
+    );
+    replace_gate(bundle, GateId::Abi, "same-revision header comparison");
+}
+
+fn validate_header_identity(manifest: &ArtifactManifest) -> Result<(), String> {
+    let source_prefix = format!(
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/{}/",
+        manifest.commit
+    );
+    let expected = [
+        (
+            manifest.version_header_path.as_path(),
+            Path::new("vendor/sciter-js-sdk-main/include/sciter-version.h"),
+            format!("{source_prefix}include/sciter-version.h"),
+            manifest.version_header_source.as_str(),
+        ),
+        (
+            manifest.api_header_path.as_path(),
+            Path::new("vendor/sciter-js-sdk-main/include/sciter-x-api.h"),
+            format!("{source_prefix}include/sciter-x-api.h"),
+            manifest.api_header_source.as_str(),
+        ),
+    ];
+    if expected
+        .iter()
+        .all(|(path, expected_path, source, actual)| path == expected_path && source == actual)
+    {
+        Ok(())
+    } else {
+        Err("manifest does not establish same-revision header identity".to_owned())
+    }
+}
+
+fn parse_engine_defines(source: &[u8]) -> Result<[u32; 4], String> {
+    Ok([
+        parse_c_define(source, "SCITER_VERSION_0")?,
+        parse_c_define(source, "SCITER_VERSION_1")?,
+        parse_c_define(source, "SCITER_VERSION_2")?,
+        parse_c_define(source, "SCITER_VERSION_3")?,
+    ])
+}
+
+fn parse_bindings_engine_constants(source: &[u8]) -> Result<[u32; 4], String> {
+    Ok([
+        parse_rust_constant(source, "SCITER_VERSION_0")?,
+        parse_rust_constant(source, "SCITER_VERSION_1")?,
+        parse_rust_constant(source, "SCITER_VERSION_2")?,
+        parse_rust_constant(source, "SCITER_VERSION_3")?,
+    ])
+}
+
+fn parse_c_define(source: &[u8], name: &str) -> Result<u32, String> {
+    let text = std::str::from_utf8(source).map_err(|error| error.to_string())?;
+    let values: Vec<_> = text
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            (fields.len() == 3 && fields[0] == "#define" && fields[1] == name).then_some(fields[2])
+        })
+        .collect();
+    if values.len() != 1 || !values[0].bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!(
+            "expected one exact authoritative #define for {name}"
+        ));
+    }
+    values[0]
+        .parse()
+        .map_err(|_| format!("invalid authoritative #define for {name}"))
+}
+
+fn parse_rust_constant(source: &[u8], name: &str) -> Result<u32, String> {
+    let text = std::str::from_utf8(source).map_err(|error| error.to_string())?;
+    let expected_name = format!("{name}:");
+    let values: Vec<_> = text
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            (fields.len() == 6
+                && fields[0] == "pub"
+                && fields[1] == "const"
+                && fields[2] == expected_name
+                && fields[3] == "u32"
+                && fields[4] == "=")
+                .then(|| fields[5].strip_suffix(';'))
+                .flatten()
+        })
+        .collect();
+    if values.len() != 1 || !values[0].bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!(
+            "expected one exact committed binding constant for {name}"
+        ));
+    }
+    values[0]
+        .parse()
+        .map_err(|_| format!("invalid committed binding constant for {name}"))
+}
+
+fn capture_single_line(capture: &CommandCapture) -> Option<&str> {
+    let text = successful_text(capture)?;
+    let mut lines = text.lines();
+    let value = lines.next()?;
+    (!value.is_empty() && lines.next().is_none() && value.trim() == value).then_some(value)
+}
+
+fn present_status(value: &str) -> CriterionStatus {
+    if value.is_empty() {
+        CriterionStatus::NotRun
+    } else {
+        CriterionStatus::Satisfied
+    }
+}
+
+fn upsert_header_results(
+    bundle: &mut ProbeBundle,
+    engine: CriterionStatus,
+    api: CriterionStatus,
+    disagreement: CriterionStatus,
+) {
+    for result in [
+        result(
+            4,
+            1,
+            engine,
+            "headers, bindings, and manifest engine version",
+        ),
+        result(4, 2, api, "headers, bindings, and manifest API version"),
+        result(
+            4,
+            7,
+            disagreement,
+            "header and binding constant disagreement",
+        ),
+    ] {
+        upsert_result(&mut bundle.criteria, result);
+    }
+}
+
+fn upsert_result(results: &mut Vec<CriterionResult>, replacement: CriterionResult) {
+    if let Some(existing) = results
+        .iter_mut()
+        .find(|result| result.id() == replacement.id())
+    {
+        *existing = replacement;
+    } else {
+        results.push(replacement);
+    }
+}
+
+fn replace_gate(bundle: &mut ProbeBundle, id: GateId, summary: &str) {
+    let replacement = gate_with_ids(id, &bundle.criteria, id.criteria());
+    let replacement = GateResult::new(id, replacement.status(), id.criteria().to_vec(), summary);
+    if let Some(existing) = bundle.gates.iter_mut().find(|gate| gate.id() == id) {
+        *existing = replacement;
+    } else {
+        bundle.gates.push(replacement);
+    }
+}
+
+fn append_capture_artifacts(
+    artifacts: &mut Vec<NamedArtifact>,
+    directory: &str,
+    name: &str,
+    capture: &CommandCapture,
+) {
+    artifacts.push(named(
+        format!("{directory}/{name}.stdout"),
+        capture.stdout.clone(),
+    ));
+    artifacts.push(named(
+        format!("{directory}/{name}.stderr"),
+        capture.stderr.clone(),
+    ));
+    artifacts.push(named(
+        format!("{directory}/{name}.status"),
+        format!("{:?}\n", capture.status).into_bytes(),
+    ));
+}
+
+fn format_utc(time: SystemTime) -> Option<String> {
+    let seconds = time.duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let days = (seconds / 86_400) as i64;
+    let day_seconds = seconds % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    Some(format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        day_seconds / 3_600,
+        day_seconds % 3_600 / 60,
+        day_seconds % 60
+    ))
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
+    let days = days_since_epoch + 719_468;
+    let era = days / 146_097;
+    let day_of_era = days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year, month, day)
 }
 
 fn successful_text(capture: &CommandCapture) -> Option<&str> {

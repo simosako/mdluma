@@ -24,6 +24,21 @@ pub(crate) struct NamedArtifact {
     pub(crate) bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct HostSnapshot {
+    pub(crate) hardware: String,
+    pub(crate) macos_version: String,
+    pub(crate) process_architecture: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HeaderEvidence {
+    pub(crate) commit: String,
+    pub(crate) engine_version: [u32; 4],
+    pub(crate) api_version: u32,
+    pub(crate) raw_artifacts: Vec<NamedArtifact>,
+}
+
 impl ArtifactManifest {
     pub(crate) const fn schema_version(&self) -> u32 {
         self.schema_version

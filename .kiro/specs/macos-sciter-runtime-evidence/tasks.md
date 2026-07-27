@@ -48,7 +48,7 @@
   - _Boundary: ArtifactProbe_
   - _Depends: 1.3_
 
-- [ ] 2.2 host snapshotとsame-revision header comparisonを実装する（1-3時間）
+- [x] 2.2 host snapshotとsame-revision header comparisonを実装する（1-3時間）
   - hardware、macOS version、実行process architecture、実行日時を標準commandから収集する。
   - manifestで指定された同revision headersからengine/API version定数を取得し、committed bindingsの定数と比較する。
   - headerが欠落またはrevisionを確認できない場合はnetwork fallbackせず、ABI criterionをNotRunとして返す。
@@ -301,3 +301,4 @@
 - Task 1.3: 固定manifestはtyped値だけでなく全12 fieldのraw canonical textも一致させ、正規化で同値になる入力を拒否する。
 - Task 1.4: 未解決permissionでもsourceは固定revision EULAを明示し、statusだけを`unresolved`として保持する。
 - Task 2.1: system metadata commandは固定absolute pathだけを使用し、Platform gateはTask 2.2完了まで`NotRun`に保つ。
+- Task 2.2: authoritative headersが欠落またはrevision不明ならnetwork fallbackせず、header/ABI evidenceを`NotRun`にする。
