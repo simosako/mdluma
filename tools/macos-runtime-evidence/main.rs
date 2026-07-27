@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+mod artifact;
 mod manifest;
 mod model;
 

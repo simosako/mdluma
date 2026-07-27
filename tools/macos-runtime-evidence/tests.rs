@@ -1,9 +1,15 @@
+use std::cell::RefCell;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::artifact::{
+    parse_minimum_versions, probe_artifact_with_runner, CodeSigningState, CommandCapture,
+    CommandRunner, CommandStatus, SystemCommandRunner,
+};
 use crate::manifest::{parse_artifact_manifest, parse_license_evidence};
 use crate::model::{
     validate_criterion_results, CriterionId, CriterionResult, CriterionStatus, CycleKind,
@@ -13,6 +19,93 @@ use crate::model::{
 
 const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
 const LICENSE_EVIDENCE: &str = "schema_version=1\nredistribution=unresolved\nresigning=unresolved\nlicense_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE\neula_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\npermission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\nrequired_about_text=This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.\nrequired_distribution_files=LICENSE,SCITER-ENGINE-EULA.md\n";
+const EXPECTED_SHA256: &str = "be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b";
+
+#[derive(Default)]
+struct FixtureCommandRunner {
+    captures: RefCell<Vec<CommandCapture>>,
+    calls: RefCell<Vec<(String, Vec<OsString>)>>,
+}
+
+impl FixtureCommandRunner {
+    fn successful() -> Self {
+        let mut runner = Self::default();
+        runner.captures.get_mut().extend([
+            capture(
+                "shasum",
+                &format!("{EXPECTED_SHA256}  runtime\n"),
+                "shasum stderr\n",
+                0,
+            ),
+            capture("lipo", "x86_64 arm64\n", "lipo stderr\n", 0),
+            capture(
+                "otool",
+                "runtime (architecture x86_64):\n      cmd LC_BUILD_VERSION\n    minos 11.5\n     tool 3\n  version 1266.8\nruntime (architecture arm64):\n      cmd LC_BUILD_VERSION\n    minos 11.5\n     tool 3\n  version 1266.8\n",
+                "otool load stderr\n",
+                0,
+            ),
+            capture(
+                "otool",
+                "runtime (architecture x86_64):\n\t/usr/local/lib/libsciter.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\nruntime (architecture arm64):\n\t/usr/local/lib/libsciter.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\n",
+                "otool dependencies stderr\n",
+                0,
+            ),
+            capture(
+                "otool",
+                "runtime (architecture x86_64):\n/usr/local/lib/libsciter.dylib\nruntime (architecture arm64):\n/usr/local/lib/libsciter.dylib\n",
+                "otool install name stderr\n",
+                0,
+            ),
+            capture(
+                "codesign",
+                "codesign stdout\n",
+                "Executable=/tmp/runtime\nSignature=adhoc\nTeamIdentifier=not set\n",
+                0,
+            ),
+        ]);
+        runner
+    }
+
+    fn calls(&self) -> Vec<(String, Vec<OsString>)> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl CommandRunner for FixtureCommandRunner {
+    fn run(&self, program: &str, arguments: &[OsString]) -> CommandCapture {
+        self.calls
+            .borrow_mut()
+            .push((program.to_owned(), arguments.to_vec()));
+        let mut capture = self.captures.borrow_mut().remove(0);
+        capture.program = program.to_owned();
+        capture.arguments = arguments.to_vec();
+        capture
+    }
+}
+
+fn capture(program: &str, stdout: &str, stderr: &str, code: i32) -> CommandCapture {
+    CommandCapture {
+        program: program.to_owned(),
+        arguments: Vec::new(),
+        stdout: stdout.as_bytes().to_vec(),
+        stderr: stderr.as_bytes().to_vec(),
+        status: CommandStatus::Exited(code),
+    }
+}
+
+fn artifact_fixture(label: &str) -> (TestDirectory, PathBuf) {
+    let test_dir = TestDirectory::new(label);
+    let runtime = test_dir
+        .path
+        .join("vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib");
+    fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    fs::write(&runtime, b"fixture runtime").unwrap();
+    (test_dir, runtime)
+}
+
+fn fixed_manifest() -> crate::model::ArtifactManifest {
+    parse_artifact_manifest(ARTIFACT_MANIFEST).unwrap()
+}
 
 struct TestDirectory {
     path: PathBuf,
@@ -915,4 +1008,297 @@ fn license_evidence_rejects_wrong_revision_sources_and_unsafe_distribution_paths
             Err(EvidenceError::InvalidManifest(_))
         ));
     }
+}
+
+#[test]
+fn artifact_probe_collects_typed_metadata_and_lossless_command_artifacts() {
+    let (repository, runtime) = artifact_fixture("artifact-success");
+    let runner = FixtureCommandRunner::successful();
+
+    let bundle = probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+
+    assert_eq!(bundle.actual_sha256.as_deref(), Some(EXPECTED_SHA256));
+    assert!(bundle.hash_matches);
+    assert_eq!(
+        bundle.provenance_repository,
+        "https://gitlab.com/sciter-engine/sciter-js-sdk"
+    );
+    assert_eq!(
+        bundle.provenance_commit,
+        "e31ec0f726bdbe5d0402ad647f3b34feef84654e"
+    );
+    assert_eq!(
+        bundle.provenance_sdk_path,
+        Path::new("bin/macosx/libsciter.dylib")
+    );
+    assert_eq!(
+        bundle.workspace_runtime_path.as_deref(),
+        bundle.runtime_path.as_deref()
+    );
+    assert_ne!(
+        bundle.provenance_sdk_path,
+        fixed_manifest().workspace_relative_path
+    );
+    assert_eq!(bundle.architectures, ["x86_64", "arm64"]);
+    assert_eq!(
+        bundle.minimum_macos_versions,
+        [
+            ("x86_64".to_owned(), "11.5".to_owned()),
+            ("arm64".to_owned(), "11.5".to_owned())
+        ]
+    );
+    assert_eq!(bundle.dependencies, ["/usr/lib/libSystem.B.dylib"]);
+    assert_eq!(
+        bundle.install_name.as_deref(),
+        Some("/usr/local/lib/libsciter.dylib")
+    );
+    assert_eq!(bundle.codesign_state, Some(CodeSigningState::AdHoc));
+    assert_eq!(bundle.raw_artifacts.len(), 18);
+    assert!(bundle.raw_artifacts.iter().any(|artifact| {
+        artifact.relative_path == Path::new("metadata/codesign.stderr")
+            && artifact.bytes
+                == b"Executable=/tmp/runtime\nSignature=adhoc\nTeamIdentifier=not set\n"
+    }));
+    assert_eq!(
+        bundle
+            .gates
+            .iter()
+            .map(GateResult::status)
+            .collect::<Vec<_>>(),
+        [GateStatus::Pass, GateStatus::NotRun]
+    );
+
+    let expected_raw = [
+        (
+            "shasum",
+            format!("{EXPECTED_SHA256}  runtime\n").into_bytes(),
+            b"shasum stderr\n".to_vec(),
+        ),
+        ("lipo", b"x86_64 arm64\n".to_vec(), b"lipo stderr\n".to_vec()),
+        (
+            "otool-load",
+            b"runtime (architecture x86_64):\n      cmd LC_BUILD_VERSION\n    minos 11.5\n     tool 3\n  version 1266.8\nruntime (architecture arm64):\n      cmd LC_BUILD_VERSION\n    minos 11.5\n     tool 3\n  version 1266.8\n".to_vec(),
+            b"otool load stderr\n".to_vec(),
+        ),
+        (
+            "otool-dependencies",
+            b"runtime (architecture x86_64):\n\t/usr/local/lib/libsciter.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\nruntime (architecture arm64):\n\t/usr/local/lib/libsciter.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\n".to_vec(),
+            b"otool dependencies stderr\n".to_vec(),
+        ),
+        (
+            "otool-install-name",
+            b"runtime (architecture x86_64):\n/usr/local/lib/libsciter.dylib\nruntime (architecture arm64):\n/usr/local/lib/libsciter.dylib\n".to_vec(),
+            b"otool install name stderr\n".to_vec(),
+        ),
+        (
+            "codesign",
+            b"codesign stdout\n".to_vec(),
+            b"Executable=/tmp/runtime\nSignature=adhoc\nTeamIdentifier=not set\n".to_vec(),
+        ),
+    ];
+    for (name, stdout, stderr) in expected_raw {
+        for (suffix, expected) in [
+            ("stdout", stdout.as_slice()),
+            ("stderr", stderr.as_slice()),
+            ("status", b"Exited(0)\n".as_slice()),
+        ] {
+            let path = PathBuf::from(format!("metadata/{name}.{suffix}"));
+            let artifact = bundle
+                .raw_artifacts
+                .iter()
+                .find(|artifact| artifact.relative_path == path)
+                .unwrap();
+            assert_eq!(artifact.bytes, expected, "{}", path.display());
+        }
+    }
+
+    let canonical_runtime = runtime.canonicalize().unwrap().into_os_string();
+    assert_eq!(
+        runner.calls(),
+        [
+            (
+                "shasum".to_owned(),
+                vec!["-a".into(), "256".into(), canonical_runtime.clone()]
+            ),
+            (
+                "lipo".to_owned(),
+                vec!["-archs".into(), canonical_runtime.clone()]
+            ),
+            (
+                "otool".to_owned(),
+                vec!["-l".into(), canonical_runtime.clone()]
+            ),
+            (
+                "otool".to_owned(),
+                vec!["-L".into(), canonical_runtime.clone()]
+            ),
+            (
+                "otool".to_owned(),
+                vec!["-D".into(), canonical_runtime.clone()]
+            ),
+            (
+                "codesign".to_owned(),
+                vec!["-dv".into(), "--verbose=4".into(), canonical_runtime]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn artifact_probe_hash_mismatch_and_arm64_absence_fail_their_typed_gates() {
+    let (repository, runtime) = artifact_fixture("artifact-mismatch");
+    let runner = FixtureCommandRunner::successful();
+    runner.captures.borrow_mut()[0].stdout = format!("{}  runtime\n", "0".repeat(64)).into_bytes();
+    runner.captures.borrow_mut()[1].stdout = b"x86_64\n".to_vec();
+
+    let bundle = probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+
+    assert!(!bundle.hash_matches);
+    assert_eq!(bundle.gates[0].status(), GateStatus::Fail);
+    assert_eq!(bundle.gates[1].status(), GateStatus::NotRun);
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(1, 6))
+            .unwrap()
+            .status(),
+        CriterionStatus::Unsatisfied
+    );
+    assert_eq!(
+        bundle
+            .criteria
+            .iter()
+            .find(|result| result.id() == CriterionId::from_parts(2, 2))
+            .unwrap()
+            .status(),
+        CriterionStatus::Unsatisfied
+    );
+}
+
+#[test]
+fn artifact_probe_path_or_provenance_mismatch_runs_no_commands() {
+    let (repository, runtime) = artifact_fixture("artifact-path");
+    let alternate = repository.path.join("alternate/libsciter.dylib");
+    fs::create_dir_all(alternate.parent().unwrap()).unwrap();
+    fs::write(&alternate, b"fixture runtime").unwrap();
+
+    let runner = FixtureCommandRunner::successful();
+    let path_bundle =
+        probe_artifact_with_runner(&fixed_manifest(), &repository.path, &alternate, &runner);
+    assert!(runner.calls().is_empty());
+    assert_eq!(path_bundle.gates[0].status(), GateStatus::Fail);
+    assert_eq!(path_bundle.gates[1].status(), GateStatus::NotRun);
+
+    let runner = FixtureCommandRunner::successful();
+    let mut manifest = fixed_manifest();
+    manifest.commit = "031ec0f726bdbe5d0402ad647f3b34feef84654e".to_owned();
+    let provenance_bundle =
+        probe_artifact_with_runner(&manifest, &repository.path, &runtime, &runner);
+    assert!(runner.calls().is_empty());
+    assert_eq!(provenance_bundle.gates[0].status(), GateStatus::Fail);
+}
+
+#[test]
+fn artifact_probe_missing_or_nonzero_command_is_fail_closed_and_keeps_raw_status() {
+    for status in [
+        CommandStatus::NotStarted("command not found".to_owned()),
+        CommandStatus::Exited(2),
+    ] {
+        let (repository, runtime) = artifact_fixture("artifact-command-failure");
+        let runner = FixtureCommandRunner::successful();
+        runner.captures.borrow_mut()[1].status = status.clone();
+
+        let bundle =
+            probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+
+        assert_ne!(bundle.gates[1].status(), GateStatus::Pass);
+        assert_eq!(bundle.command_captures[1].status, status);
+        assert!(bundle.raw_artifacts.iter().any(|artifact| {
+            artifact.relative_path == Path::new("metadata/lipo.status")
+                && !artifact.bytes.is_empty()
+        }));
+    }
+}
+
+#[test]
+fn every_artifact_command_failure_is_typed_and_cannot_pass_an_owned_gate() {
+    let affected_criteria = [(1, 5), (2, 1), (2, 5), (2, 6), (2, 7), (2, 8)];
+    for (command_index, (requirement, criterion)) in affected_criteria.into_iter().enumerate() {
+        let (repository, runtime) = artifact_fixture("artifact-each-command-failure");
+        let runner = FixtureCommandRunner::successful();
+        runner.captures.borrow_mut()[command_index].status =
+            CommandStatus::NotStarted("command not found".to_owned());
+
+        let bundle =
+            probe_artifact_with_runner(&fixed_manifest(), &repository.path, &runtime, &runner);
+
+        assert_eq!(
+            bundle
+                .criteria
+                .iter()
+                .find(|result| { result.id() == CriterionId::from_parts(requirement, criterion) })
+                .unwrap()
+                .status(),
+            CriterionStatus::NotRun,
+            "command index {command_index}"
+        );
+        let owned_gate = if requirement == 1 {
+            GateId::Artifact
+        } else {
+            GateId::Platform
+        };
+        assert_ne!(
+            bundle
+                .gates
+                .iter()
+                .find(|gate| gate.id() == owned_gate)
+                .unwrap()
+                .status(),
+            GateStatus::Pass
+        );
+        assert_eq!(
+            bundle.command_captures[command_index].status,
+            CommandStatus::NotStarted("command not found".to_owned())
+        );
+    }
+}
+
+#[test]
+fn system_runner_maps_only_allowed_identifiers_to_fixed_absolute_paths() {
+    assert_eq!(
+        SystemCommandRunner::program_path("shasum"),
+        Some("/usr/bin/shasum")
+    );
+    assert_eq!(
+        SystemCommandRunner::program_path("lipo"),
+        Some("/usr/bin/lipo")
+    );
+    assert_eq!(
+        SystemCommandRunner::program_path("otool"),
+        Some("/usr/bin/otool")
+    );
+    assert_eq!(
+        SystemCommandRunner::program_path("codesign"),
+        Some("/usr/bin/codesign")
+    );
+    assert_eq!(SystemCommandRunner::program_path("sh"), None);
+    assert_eq!(SystemCommandRunner::program_path("/tmp/shasum"), None);
+
+    let rejected = SystemCommandRunner.run("sh", &["-c".into(), "exit 0".into()]);
+    assert!(matches!(rejected.status, CommandStatus::NotStarted(_)));
+    assert_eq!(rejected.program, "sh");
+}
+
+#[test]
+fn minimum_macos_parser_supports_legacy_commands_and_ignores_unrelated_versions() {
+    let output = "runtime (architecture x86_64):\n      cmd LC_VERSION_MIN_MACOSX\n  cmdsize 16\n  version 10.13\n      sdk 10.15\nLoad command 10\n      cmd LC_SOURCE_VERSION\n  version 99.88\nruntime (architecture arm64):\n      cmd LC_BUILD_VERSION\n platform 1\n    minos 11.5\n      sdk 26.4\n     tool 3\n  version 1266.8\n";
+
+    assert_eq!(
+        parse_minimum_versions(output),
+        [
+            ("x86_64".to_owned(), "10.13".to_owned()),
+            ("arm64".to_owned(), "11.5".to_owned()),
+        ]
+    );
 }

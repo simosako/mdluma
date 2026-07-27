@@ -39,7 +39,7 @@
   - _Depends: 1.2_
 
 - [ ] 2. Runtime artifactとhost metadataを検証する
-- [ ] 2.1 (P) runtime identityとMach-O metadata probeを実装する（1-3時間）
+- [x] 2.1 (P) runtime identityとMach-O metadata probeを実装する（1-3時間）
   - runtimeをcanonicalizeし、manifestのworkspace pathと一致する場合だけ標準commandを実行する。
   - hash、全architecture、minimum macOS version、外部依存、install name、署名状態をtyped resultとraw stdout/stderrとして返す。
   - 公式repository内pathとworkspace配置pathを別の証拠として扱い、実hashと期待hashの比較結果を生成する。
@@ -300,3 +300,4 @@
 - Task 1.2: Evidence Typesは静的catalogと型検証だけを所有し、67 criterion/8 gateのcompleteness判定はTask 7.2のDecisionEvaluatorに残す。
 - Task 1.3: 固定manifestはtyped値だけでなく全12 fieldのraw canonical textも一致させ、正規化で同値になる入力を拒否する。
 - Task 1.4: 未解決permissionでもsourceは固定revision EULAを明示し、statusだけを`unresolved`として保持する。
+- Task 2.1: system metadata commandは固定absolute pathだけを使用し、Platform gateはTask 2.2完了まで`NotRun`に保つ。

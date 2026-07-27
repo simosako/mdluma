@@ -18,6 +18,12 @@ pub(crate) struct ArtifactManifest {
     pub(crate) api_header_source: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NamedArtifact {
+    pub(crate) relative_path: PathBuf,
+    pub(crate) bytes: Vec<u8>,
+}
+
 impl ArtifactManifest {
     pub(crate) const fn schema_version(&self) -> u32 {
         self.schema_version
