@@ -17,6 +17,7 @@ use crate::model::{
     CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent,
     PermissionStatus, RunId, ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
 };
+use crate::sciter::{DynamicLoader, RuntimeLoadError, SciterRuntime, RTLD_LOCAL, RTLD_NOW};
 
 const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
 const LICENSE_EVIDENCE: &str = "schema_version=1\nredistribution=unresolved\nresigning=unresolved\nlicense_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE\neula_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\npermission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\nrequired_about_text=This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.\nrequired_distribution_files=LICENSE,SCITER-ENGINE-EULA.md\n";
@@ -131,6 +132,195 @@ fn write_header_fixture(repository: &TestDirectory, version: [u32; 4], api: u32)
 
 fn fixed_manifest() -> crate::model::ArtifactManifest {
     parse_artifact_manifest(ARTIFACT_MANIFEST).unwrap()
+}
+
+#[derive(Default)]
+struct FixtureDynamicLoader {
+    open_result: *mut std::ffi::c_void,
+    symbol_result: *mut std::ffi::c_void,
+    errors: RefCell<Vec<Option<std::ffi::CString>>>,
+    opens: RefCell<Vec<(Vec<u8>, i32)>>,
+    symbols: RefCell<Vec<Vec<u8>>>,
+}
+
+impl DynamicLoader for FixtureDynamicLoader {
+    unsafe fn open(&self, path: *const std::ffi::c_char, flags: i32) -> *mut std::ffi::c_void {
+        let path = unsafe { std::ffi::CStr::from_ptr(path) };
+        self.opens
+            .borrow_mut()
+            .push((path.to_bytes().to_vec(), flags));
+        self.open_result
+    }
+
+    unsafe fn symbol(
+        &self,
+        _handle: *mut std::ffi::c_void,
+        symbol: *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_void {
+        let symbol = unsafe { std::ffi::CStr::from_ptr(symbol) };
+        self.symbols.borrow_mut().push(symbol.to_bytes().to_vec());
+        self.symbol_result
+    }
+
+    unsafe fn error(&self) -> *const std::ffi::c_char {
+        self.errors
+            .borrow_mut()
+            .remove(0)
+            .map_or(std::ptr::null(), |error| error.into_raw())
+    }
+}
+
+unsafe extern "C" fn non_null_sciter_api() -> *const crate::sciter::bindings::ISciterAPI {
+    std::ptr::NonNull::<crate::sciter::bindings::ISciterAPI>::dangling().as_ptr()
+}
+
+unsafe extern "C" fn null_sciter_api() -> *const crate::sciter::bindings::ISciterAPI {
+    std::ptr::null()
+}
+
+fn successful_dynamic_loader() -> FixtureDynamicLoader {
+    FixtureDynamicLoader {
+        open_result: std::ptr::NonNull::<std::ffi::c_void>::dangling().as_ptr(),
+        symbol_result: non_null_sciter_api as *const () as *mut std::ffi::c_void,
+        errors: RefCell::new(vec![None, None]),
+        ..FixtureDynamicLoader::default()
+    }
+}
+
+#[test]
+fn sciter_runtime_rejects_invalid_nonabsolute_noncanonical_and_mismatched_paths_before_ffi() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = TestDirectory::new("sciter-runtime-paths");
+    let runtime = directory.path.join("libsciter.dylib");
+    let alternate = directory.path.join("alternate.dylib");
+    fs::write(&runtime, b"runtime").unwrap();
+    fs::write(&alternate, b"alternate").unwrap();
+    let runtime = runtime.canonicalize().unwrap();
+    let alternate = alternate.canonicalize().unwrap();
+
+    for (path, expected) in [
+        (PathBuf::from("libsciter.dylib"), "nonabsolute"),
+        (directory.path.join("./libsciter.dylib"), "noncanonical"),
+    ] {
+        let loader = successful_dynamic_loader();
+        let error = unsafe { SciterRuntime::load_with(&path, &runtime, &loader) }.unwrap_err();
+        assert!(matches!(
+            (expected, error),
+            ("nonabsolute", RuntimeLoadError::NonAbsolutePath { .. })
+                | ("noncanonical", RuntimeLoadError::NonCanonicalPath { .. })
+        ));
+        assert!(loader.opens.borrow().is_empty());
+    }
+
+    let invalid = PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/lib\0sciter.dylib"));
+    let loader = successful_dynamic_loader();
+    assert!(matches!(
+        unsafe { SciterRuntime::load_with(&invalid, &runtime, &loader) },
+        Err(RuntimeLoadError::InvalidPath { .. })
+    ));
+    assert!(loader.opens.borrow().is_empty());
+
+    let loader = successful_dynamic_loader();
+    assert!(matches!(
+        unsafe { SciterRuntime::load_with(&alternate, &runtime, &loader) },
+        Err(RuntimeLoadError::PathMismatch { .. })
+    ));
+    assert!(loader.opens.borrow().is_empty());
+}
+
+#[test]
+fn sciter_runtime_loads_only_the_exact_canonical_manifest_path_and_export() {
+    let directory = TestDirectory::new("sciter-runtime-exact-load");
+    let runtime = directory.path.join("libsciter.dylib");
+    fs::write(&runtime, b"runtime").unwrap();
+    let runtime = runtime.canonicalize().unwrap();
+    let loader = successful_dynamic_loader();
+
+    let loaded = unsafe { SciterRuntime::load_with(&runtime, &runtime, &loader) }.unwrap();
+
+    assert_eq!(
+        loader.opens.borrow().as_slice(),
+        &[(
+            runtime.as_os_str().as_encoded_bytes().to_vec(),
+            RTLD_NOW | RTLD_LOCAL
+        )]
+    );
+    assert_eq!(loader.symbols.borrow().as_slice(), &[b"SciterAPI".to_vec()]);
+    assert_eq!(
+        loaded.api_table(),
+        std::ptr::NonNull::<crate::sciter::bindings::ISciterAPI>::dangling()
+    );
+}
+
+#[test]
+fn sciter_runtime_returns_copied_load_symbol_and_null_table_failures() {
+    let directory = TestDirectory::new("sciter-runtime-failures");
+    let runtime = directory.path.join("libsciter.dylib");
+    fs::write(&runtime, b"runtime").unwrap();
+    let runtime = runtime.canonicalize().unwrap();
+
+    let load_failure = FixtureDynamicLoader {
+        errors: RefCell::new(vec![Some(
+            std::ffi::CString::new("pinned load failed").unwrap(),
+        )]),
+        ..FixtureDynamicLoader::default()
+    };
+    assert!(matches!(
+        unsafe { SciterRuntime::load_with(&runtime, &runtime, &load_failure) },
+        Err(RuntimeLoadError::LoadFailure { diagnostic, .. }) if diagnostic == "pinned load failed"
+    ));
+
+    let symbol_failure = FixtureDynamicLoader {
+        open_result: std::ptr::NonNull::<std::ffi::c_void>::dangling().as_ptr(),
+        errors: RefCell::new(vec![
+            None,
+            Some(std::ffi::CString::new("export absent").unwrap()),
+        ]),
+        ..FixtureDynamicLoader::default()
+    };
+    assert!(matches!(
+        unsafe { SciterRuntime::load_with(&runtime, &runtime, &symbol_failure) },
+        Err(RuntimeLoadError::SymbolResolutionFailure { diagnostic, .. }) if diagnostic == "export absent"
+    ));
+
+    let null_table = FixtureDynamicLoader {
+        open_result: std::ptr::NonNull::<std::ffi::c_void>::dangling().as_ptr(),
+        symbol_result: null_sciter_api as *const () as *mut std::ffi::c_void,
+        errors: RefCell::new(vec![None, None]),
+        ..FixtureDynamicLoader::default()
+    };
+    assert!(matches!(
+        unsafe { SciterRuntime::load_with(&runtime, &runtime, &null_table) },
+        Err(RuntimeLoadError::NullApiTable)
+    ));
+}
+
+#[test]
+#[ignore = "requires the pinned Sciter dylib on a native arm64 macOS host"]
+fn pinned_sciter_runtime_load_smoke() {
+    let repository_root = toolkit_dir().join("../..").canonicalize().unwrap();
+    let manifest = fixed_manifest();
+    let runtime = repository_root
+        .join(manifest.workspace_relative_path())
+        .canonicalize()
+        .unwrap();
+    let hash = Command::new("/usr/bin/shasum")
+        .args(["-a", "256"])
+        .arg(&runtime)
+        .output()
+        .unwrap();
+    assert!(hash.status.success());
+    assert_eq!(
+        String::from_utf8(hash.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some(manifest.sha256())
+    );
+
+    let loaded = unsafe { SciterRuntime::load_absolute(&runtime, &runtime) }.unwrap();
+    let _api_table = loaded.api_table();
 }
 
 struct TestDirectory {

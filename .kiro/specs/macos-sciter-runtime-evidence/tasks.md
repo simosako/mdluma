@@ -64,7 +64,7 @@
   - _Boundary: ArtifactProbe_
 
 - [ ] 3. Sciter runtimeの限定FFIとAPI/ABI smokeを実装する
-- [ ] 3.1 (P) absolute-path限定のSciter runtime load境界を実装する（1-3時間）
+- [x] 3.1 (P) absolute-path限定のSciter runtime load境界を実装する（1-3時間）
   - macOS `libSystem`のdynamic loadingだけを使用し、探索path、current directory、環境変数fallbackを使用しない。
   - `SciterAPI` exportを正確なsignatureへ一度だけ変換し、API table pointerのnullを検査する。
   - runtime handleをprocess lifetimeまで保持し、途中で`dlclose`しない。
@@ -303,3 +303,4 @@
 - Task 2.1: system metadata commandは固定absolute pathだけを使用し、Platform gateはTask 2.2完了まで`NotRun`に保つ。
 - Task 2.2: authoritative headersが欠落またはrevision不明ならnetwork fallbackせず、header/ABI evidenceを`NotRun`にする。
 - Task 2.3: 未収集criterionが残っていても既知の`Unsatisfied`はgateを`Fail`にできるが、不完全な入力から`Pass`は生成しない。
+- Task 3.1: Sciter runtimeはmanifestと一致するcanonical absolute pathだけを`RTLD_NOW | RTLD_LOCAL`で開き、handleをprocess lifetimeまで保持する。
