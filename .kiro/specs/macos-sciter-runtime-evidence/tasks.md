@@ -73,7 +73,7 @@
   - _Boundary: SciterRuntime_
   - _Depends: 1.2, 1.3_
 
-- [ ] 3.2 committed bindingsによるversion限定ABI accessを実装する（1-3時間）
+- [x] 3.2 committed bindingsによるversion限定ABI accessを実装する（1-3時間）
   - read-only includeした既存bindings型からAPI version fieldと`SciterVersion` entryだけを取得する。
   - fieldとfunction pointerをnull checkした後に、native arm64 main threadでengine versionを取得する。
   - API 10およびengine 6.0.3.18との比較結果とprocess終了状態を返す。
@@ -304,3 +304,4 @@
 - Task 2.2: authoritative headersが欠落またはrevision不明ならnetwork fallbackせず、header/ABI evidenceを`NotRun`にする。
 - Task 2.3: 未収集criterionが残っていても既知の`Unsatisfied`はgateを`Fail`にできるが、不完全な入力から`Pass`は生成しない。
 - Task 3.1: Sciter runtimeはmanifestと一致するcanonical absolute pathだけを`RTLD_NOW | RTLD_LOCAL`で開き、handleをprocess lifetimeまで保持する。
+- Task 3.2: committed bindingsのABI claimはAPI `version` fieldと`SciterVersion` entryだけに限定し、selector順序`0,1,2,3`を固定する。

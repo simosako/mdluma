@@ -4,6 +4,9 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
+use std::rc::Rc;
+
+use crate::model::ArtifactManifest;
 
 #[allow(
     dead_code,
@@ -71,6 +74,7 @@ extern "C" {
     fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     fn dlerror() -> *const c_char;
+    fn pthread_main_np() -> c_int;
 }
 
 impl DynamicLoader for LibSystemDynamicLoader {
@@ -92,6 +96,83 @@ pub(crate) struct SciterRuntime {
     #[allow(dead_code)]
     library: NonNull<c_void>,
     api: NonNull<bindings::ISciterAPI>,
+    _main_thread_only: std::marker::PhantomData<Rc<()>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AbiField {
+    ApiVersion,
+    SciterVersion,
+}
+
+const VALIDATED_ABI_FIELDS: [AbiField; 2] = [AbiField::ApiVersion, AbiField::SciterVersion];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ThreadContext {
+    Main,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AbiSmokeResult {
+    actual_api_version: u32,
+    expected_api_version: u32,
+    actual_engine_version: [u32; 4],
+    expected_engine_version: [u32; 4],
+    version_call_returned: bool,
+    process_architecture: &'static str,
+    thread_context: ThreadContext,
+}
+
+impl AbiSmokeResult {
+    pub(crate) const fn actual_api_version(self) -> u32 {
+        self.actual_api_version
+    }
+
+    pub(crate) const fn expected_api_version(self) -> u32 {
+        self.expected_api_version
+    }
+
+    pub(crate) fn api_matches(self) -> bool {
+        self.actual_api_version == self.expected_api_version
+    }
+
+    pub(crate) const fn actual_engine_version(self) -> [u32; 4] {
+        self.actual_engine_version
+    }
+
+    pub(crate) const fn expected_engine_version(self) -> [u32; 4] {
+        self.expected_engine_version
+    }
+
+    pub(crate) fn engine_matches(self) -> bool {
+        self.actual_engine_version == self.expected_engine_version
+    }
+
+    pub(crate) const fn version_call_returned(self) -> bool {
+        self.version_call_returned
+    }
+
+    pub(crate) const fn process_architecture(self) -> &'static str {
+        self.process_architecture
+    }
+
+    pub(crate) const fn thread_context(self) -> ThreadContext {
+        self.thread_context
+    }
+
+    pub(crate) const fn validated_fields(self) -> &'static [AbiField] {
+        &VALIDATED_ABI_FIELDS
+    }
+
+    pub(crate) const fn validates_lifecycle_api(self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeAbiError {
+    NotMainThread,
+    NullSciterVersion,
 }
 
 impl SciterRuntime {
@@ -115,6 +196,65 @@ impl SciterRuntime {
 
     pub(crate) fn api_table(&self) -> NonNull<bindings::ISciterAPI> {
         self.api
+    }
+
+    pub(crate) fn abi_smoke(
+        &self,
+        manifest: &ArtifactManifest,
+    ) -> Result<AbiSmokeResult, RuntimeAbiError> {
+        self.abi_smoke_checked(manifest, is_process_main_thread)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn abi_smoke_with_main_thread_check(
+        &self,
+        manifest: &ArtifactManifest,
+        is_main_thread: impl FnOnce() -> bool,
+    ) -> Result<AbiSmokeResult, RuntimeAbiError> {
+        self.abi_smoke_checked(manifest, is_main_thread)
+    }
+
+    fn abi_smoke_checked(
+        &self,
+        manifest: &ArtifactManifest,
+        is_main_thread: impl FnOnce() -> bool,
+    ) -> Result<AbiSmokeResult, RuntimeAbiError> {
+        if !is_main_thread() {
+            return Err(RuntimeAbiError::NotMainThread);
+        }
+
+        // The committed generated type is authoritative for both offsets. No other table entry is
+        // read here, and the function slot is checked before the four documented selector calls.
+        let api = unsafe { self.api.as_ref() };
+        let actual_api_version = api.version;
+        let sciter_version = api
+            .SciterVersion
+            .ok_or(RuntimeAbiError::NullSciterVersion)?;
+        let actual_engine_version = [
+            unsafe { sciter_version(0) },
+            unsafe { sciter_version(1) },
+            unsafe { sciter_version(2) },
+            unsafe { sciter_version(3) },
+        ];
+
+        Ok(AbiSmokeResult {
+            actual_api_version,
+            expected_api_version: manifest.api_version(),
+            actual_engine_version,
+            expected_engine_version: manifest.engine_version(),
+            version_call_returned: true,
+            process_architecture: "arm64",
+            thread_context: ThreadContext::Main,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) unsafe fn from_api_table_for_tests(api: &bindings::ISciterAPI) -> Self {
+        Self {
+            library: NonNull::dangling(),
+            api: NonNull::from(api),
+            _main_thread_only: std::marker::PhantomData,
+        }
     }
 
     pub(crate) unsafe fn load_with<L: DynamicLoader>(
@@ -172,8 +312,16 @@ impl SciterRuntime {
         let api = NonNull::new(unsafe { sciter_api() } as *mut bindings::ISciterAPI)
             .ok_or(RuntimeLoadError::NullApiTable)?;
 
-        Ok(Self { library, api })
+        Ok(Self {
+            library,
+            api,
+            _main_thread_only: std::marker::PhantomData,
+        })
     }
+}
+
+fn is_process_main_thread() -> bool {
+    unsafe { pthread_main_np() == 1 }
 }
 
 fn validate_canonical_absolute(path: &Path, role: &'static str) -> Result<(), RuntimeLoadError> {

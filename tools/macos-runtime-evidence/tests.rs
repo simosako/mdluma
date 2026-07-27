@@ -17,7 +17,10 @@ use crate::model::{
     CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent,
     PermissionStatus, RunId, ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
 };
-use crate::sciter::{DynamicLoader, RuntimeLoadError, SciterRuntime, RTLD_LOCAL, RTLD_NOW};
+use crate::sciter::{
+    AbiField, DynamicLoader, RuntimeAbiError, RuntimeLoadError, SciterRuntime, ThreadContext,
+    RTLD_LOCAL, RTLD_NOW,
+};
 
 const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
 const LICENSE_EVIDENCE: &str = "schema_version=1\nredistribution=unresolved\nresigning=unresolved\nlicense_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE\neula_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\npermission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\nrequired_about_text=This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.\nrequired_distribution_files=LICENSE,SCITER-ENGINE-EULA.md\n";
@@ -178,6 +181,29 @@ unsafe extern "C" fn null_sciter_api() -> *const crate::sciter::bindings::IScite
     std::ptr::null()
 }
 
+thread_local! {
+    static VERSION_SELECTORS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
+unsafe extern "C" fn synthetic_sciter_version(selector: u32) -> u32 {
+    VERSION_SELECTORS.with(|selectors| selectors.borrow_mut().push(selector));
+    [6, 0, 3, 18]
+        .get(selector as usize)
+        .copied()
+        .unwrap_or(u32::MAX)
+}
+
+fn synthetic_api_table(
+    api_version: u32,
+    version: Option<unsafe extern "C" fn(u32) -> u32>,
+) -> Box<crate::sciter::bindings::ISciterAPI> {
+    let mut table: Box<crate::sciter::bindings::ISciterAPI> =
+        Box::new(unsafe { std::mem::zeroed() });
+    table.version = api_version;
+    table.SciterVersion = version;
+    table
+}
+
 fn successful_dynamic_loader() -> FixtureDynamicLoader {
     FixtureDynamicLoader {
         open_result: std::ptr::NonNull::<std::ffi::c_void>::dangling().as_ptr(),
@@ -297,8 +323,76 @@ fn sciter_runtime_returns_copied_load_symbol_and_null_table_failures() {
 }
 
 #[test]
+fn committed_bindings_abi_smoke_matches_manifest_and_limits_its_claim() {
+    VERSION_SELECTORS.with(|selectors| selectors.borrow_mut().clear());
+    let table = synthetic_api_table(10, Some(synthetic_sciter_version));
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&*table) };
+
+    let result = runtime
+        .abi_smoke_with_main_thread_check(&fixed_manifest(), || true)
+        .unwrap();
+
+    assert_eq!(result.actual_api_version(), 10);
+    assert_eq!(result.expected_api_version(), 10);
+    assert!(result.api_matches());
+    assert_eq!(result.actual_engine_version(), [6, 0, 3, 18]);
+    assert_eq!(result.expected_engine_version(), [6, 0, 3, 18]);
+    assert!(result.engine_matches());
+    assert!(result.version_call_returned());
+    assert_eq!(result.process_architecture(), "arm64");
+    assert_eq!(result.thread_context(), ThreadContext::Main);
+    assert_eq!(
+        result.validated_fields(),
+        &[AbiField::ApiVersion, AbiField::SciterVersion]
+    );
+    assert!(!result.validates_lifecycle_api());
+    VERSION_SELECTORS.with(|selectors| assert_eq!(*selectors.borrow(), [0, 1, 2, 3]));
+}
+
+#[test]
+fn committed_bindings_abi_smoke_reports_api_and_engine_mismatches() {
+    let table = synthetic_api_table(11, Some(synthetic_sciter_version));
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&*table) };
+    let mut manifest = fixed_manifest();
+    manifest.engine_version = [6, 0, 3, 19];
+
+    let result = runtime
+        .abi_smoke_with_main_thread_check(&manifest, || true)
+        .unwrap();
+
+    assert!(!result.api_matches());
+    assert!(!result.engine_matches());
+    assert_eq!(result.actual_api_version(), 11);
+    assert_eq!(result.actual_engine_version(), [6, 0, 3, 18]);
+}
+
+#[test]
+fn committed_bindings_abi_smoke_rejects_null_version_entry_before_call() {
+    let table = synthetic_api_table(10, None);
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&*table) };
+
+    assert_eq!(
+        runtime.abi_smoke_with_main_thread_check(&fixed_manifest(), || true),
+        Err(RuntimeAbiError::NullSciterVersion)
+    );
+}
+
+#[test]
+fn committed_bindings_abi_smoke_enforces_main_thread_without_calling_sciter() {
+    VERSION_SELECTORS.with(|selectors| selectors.borrow_mut().clear());
+    let table = synthetic_api_table(10, Some(synthetic_sciter_version));
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&*table) };
+
+    assert_eq!(
+        runtime.abi_smoke_with_main_thread_check(&fixed_manifest(), || false),
+        Err(RuntimeAbiError::NotMainThread)
+    );
+    VERSION_SELECTORS.with(|selectors| assert!(selectors.borrow().is_empty()));
+}
+
+#[test]
 #[ignore = "requires the pinned Sciter dylib on a native arm64 macOS host"]
-fn pinned_sciter_runtime_load_smoke() {
+fn pinned_sciter_runtime_abi_smoke() {
     let repository_root = toolkit_dir().join("../..").canonicalize().unwrap();
     let manifest = fixed_manifest();
     let runtime = repository_root
@@ -319,8 +413,72 @@ fn pinned_sciter_runtime_load_smoke() {
         Some(manifest.sha256())
     );
 
-    let loaded = unsafe { SciterRuntime::load_absolute(&runtime, &runtime) }.unwrap();
-    let _api_table = loaded.api_table();
+    let helper_dir = TestDirectory::new("pinned-abi-main-thread");
+    let helper_source = helper_dir.path.join("smoke.rs");
+    let helper_binary = helper_dir.path.join("smoke");
+    let model_path = toolkit_dir().join("model.rs");
+    let manifest_path = toolkit_dir().join("manifest.rs");
+    let sciter_path = toolkit_dir().join("sciter.rs");
+    let artifact_manifest_path = repository_root
+        .join(".kiro/specs/macos-sciter-runtime-evidence/evidence/artifact-manifest.txt");
+    let source = format!(
+        r#"
+#[path = {model_path:?}]
+mod model;
+#[path = {manifest_path:?}]
+mod manifest;
+#[path = {sciter_path:?}]
+mod sciter;
+
+fn main() {{
+    let manifest_text = std::fs::read_to_string({artifact_manifest_path:?}).unwrap();
+    let manifest = manifest::parse_artifact_manifest(&manifest_text).unwrap();
+    let runtime = std::path::Path::new({runtime:?}).canonicalize().unwrap();
+    let loaded = unsafe {{ sciter::SciterRuntime::load_absolute(&runtime, &runtime) }}.unwrap();
+    let result = loaded.abi_smoke(&manifest).unwrap();
+    assert_eq!(result.actual_api_version(), 10);
+    assert_eq!(result.expected_api_version(), 10);
+    assert_eq!(result.actual_engine_version(), [6, 0, 3, 18]);
+    assert_eq!(result.expected_engine_version(), [6, 0, 3, 18]);
+    assert!(result.api_matches());
+    assert!(result.engine_matches());
+    assert!(result.version_call_returned());
+    assert_eq!(result.process_architecture(), "arm64");
+    assert_eq!(result.thread_context(), sciter::ThreadContext::Main);
+    assert_eq!(result.validated_fields(), &[sciter::AbiField::ApiVersion, sciter::AbiField::SciterVersion]);
+    assert!(!result.validates_lifecycle_api());
+}}
+"#,
+    );
+    fs::write(&helper_source, source).unwrap();
+
+    let mut compiler = if let Some(rustc) = std::env::var_os("RUSTC") {
+        Command::new(rustc)
+    } else {
+        let mut command = Command::new("mise");
+        command.args(["exec", "rust@stable", "--", "rustc"]);
+        command
+    };
+    let compilation = compiler
+        .args(["--edition=2021"])
+        .arg(&helper_source)
+        .arg("-o")
+        .arg(&helper_binary)
+        .output()
+        .unwrap();
+    assert!(
+        compilation.status.success(),
+        "helper compilation failed: {}",
+        String::from_utf8_lossy(&compilation.stderr)
+    );
+
+    let smoke = Command::new(helper_binary).output().unwrap();
+    assert!(
+        smoke.status.success(),
+        "pinned ABI smoke failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&smoke.stdout),
+        String::from_utf8_lossy(&smoke.stderr)
+    );
 }
 
 struct TestDirectory {
