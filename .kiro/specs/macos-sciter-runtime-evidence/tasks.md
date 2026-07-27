@@ -10,7 +10,7 @@
   - _Requirements: 2.3, 2.4, 7.2, 7.3, 7.4, 7.7, 7.8, 7.9_
   - _Boundary: BuildEntry_
 
-- [ ] 1.2 78 criterionと8 gateを表す共有evidence modelを実装する（1-3時間）
+- [x] 1.2 78 criterionと8 gateを表す共有evidence modelを実装する（1-3時間）
   - criterion status、gate status、decision state、cycle event、run identity、typed errorを定義する。
   - 1.1から8.11までの78 IDと、Requirements 1から7の67 source IDを重複なく列挙する。
   - conditional criterionでのみNotApplicableを許可し、missing、duplicate、unknown IDを失敗として扱う。
@@ -297,3 +297,4 @@
 ## Implementation Notes
 
 - Task 1.1: Rust stableは`mise`管理下にあり、task-local verificationは`mise exec rust@stable -- ...`で実行する。
+- Task 1.2: Evidence Typesは静的catalogと型検証だけを所有し、67 criterion/8 gateのcompleteness判定はTask 7.2のDecisionEvaluatorに残す。

@@ -4,6 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::model::{
+    validate_criterion_results, CriterionId, CriterionResult, CriterionStatus, CycleKind,
+    CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent, RunId,
+    ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
+};
+
 struct TestDirectory {
     path: PathBuf,
 }
@@ -221,4 +227,310 @@ fn build_entry_does_not_preflight_artifact_metadata_commands() {
             "{later_phase_command} belongs to ArtifactProbe or EvidenceRunner"
         );
     }
+}
+
+#[test]
+fn criterion_catalogs_contain_exactly_78_known_and_67_source_ids() {
+    let mut expected = Vec::new();
+    for (requirement, last_criterion) in [
+        (1, 7),
+        (2, 8),
+        (3, 9),
+        (4, 10),
+        (5, 10),
+        (6, 11),
+        (7, 12),
+        (8, 11),
+    ] {
+        expected.extend(
+            (1..=last_criterion).map(|criterion| CriterionId::from_parts(requirement, criterion)),
+        );
+    }
+
+    assert_eq!(ALL_CRITERIA, expected);
+    assert_eq!(SOURCE_CRITERIA, &expected[..67]);
+}
+
+#[test]
+fn criterion_result_validation_rejects_missing_duplicate_unknown_and_unauthorized_na() {
+    let satisfied = |id| CriterionResult::new(id, CriterionStatus::Satisfied, "ok", vec![]);
+    let complete: Vec<_> = SOURCE_CRITERIA.iter().copied().map(satisfied).collect();
+    validate_criterion_results(&complete, SOURCE_CRITERIA).unwrap();
+
+    let mut missing = complete.clone();
+    missing.pop();
+    assert!(matches!(
+        validate_criterion_results(&missing, SOURCE_CRITERIA),
+        Err(EvidenceError::MissingCriterion(_))
+    ));
+
+    let mut duplicate = complete.clone();
+    duplicate.push(complete[0].clone());
+    assert!(matches!(
+        validate_criterion_results(&duplicate, SOURCE_CRITERIA),
+        Err(EvidenceError::DuplicateCriterion(_))
+    ));
+
+    let unknown = CriterionId::from_parts(9, 1);
+    let mut with_unknown = complete.clone();
+    with_unknown[0] = satisfied(unknown);
+    assert!(matches!(
+        validate_criterion_results(&with_unknown, SOURCE_CRITERIA),
+        Err(EvidenceError::UnknownCriterion(id)) if id == unknown
+    ));
+}
+
+#[test]
+fn not_applicable_is_authorized_for_exactly_the_explicit_conditional_ids() {
+    let expected = [
+        (1, 5),
+        (1, 6),
+        (1, 7),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (2, 4),
+        (3, 3),
+        (3, 4),
+        (3, 5),
+        (3, 6),
+        (3, 7),
+        (3, 8),
+        (3, 9),
+        (4, 3),
+        (4, 4),
+        (4, 5),
+        (4, 6),
+        (4, 7),
+        (4, 8),
+        (4, 9),
+        (5, 2),
+        (5, 3),
+        (5, 6),
+        (5, 7),
+        (5, 8),
+        (5, 9),
+        (6, 7),
+        (6, 8),
+        (6, 9),
+        (6, 10),
+        (6, 11),
+        (7, 10),
+        (7, 11),
+        (7, 12),
+        (8, 2),
+        (8, 3),
+        (8, 4),
+        (8, 5),
+        (8, 6),
+        (8, 7),
+        (8, 8),
+        (8, 9),
+        (8, 10),
+    ]
+    .map(|(requirement, criterion)| CriterionId::from_parts(requirement, criterion));
+
+    let actual: Vec<_> = ALL_CRITERIA
+        .iter()
+        .copied()
+        .filter(|id| id.permits_not_applicable())
+        .collect();
+    assert_eq!(actual, expected);
+
+    for id in ALL_CRITERIA.iter().copied() {
+        let result = CriterionResult::try_new(
+            id,
+            CriterionStatus::NotApplicable,
+            "trigger did not apply",
+            vec![],
+        );
+        assert_eq!(result.is_ok(), expected.contains(&id), "criterion {id}");
+    }
+}
+
+#[test]
+fn gate_catalog_and_mappings_cover_exactly_eight_required_gates() {
+    let expected_gates = [
+        GateId::Artifact,
+        GateId::Platform,
+        GateId::Api,
+        GateId::Abi,
+        GateId::Popup,
+        GateId::Window,
+        GateId::License,
+        GateId::Record,
+    ];
+    assert_eq!(ALL_GATES, expected_gates);
+
+    let mappings: &[(GateId, &[(u8, u8)])] = &[
+        (
+            GateId::Artifact,
+            &[(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7)],
+        ),
+        (
+            GateId::Platform,
+            &[
+                (2, 1),
+                (2, 2),
+                (2, 3),
+                (2, 4),
+                (2, 5),
+                (2, 6),
+                (2, 7),
+                (2, 8),
+            ],
+        ),
+        (
+            GateId::Api,
+            &[
+                (3, 1),
+                (3, 2),
+                (3, 3),
+                (3, 4),
+                (3, 5),
+                (3, 6),
+                (3, 7),
+                (3, 8),
+                (3, 9),
+            ],
+        ),
+        (
+            GateId::Abi,
+            &[
+                (4, 1),
+                (4, 2),
+                (4, 3),
+                (4, 4),
+                (4, 5),
+                (4, 6),
+                (4, 7),
+                (4, 8),
+                (4, 9),
+                (4, 10),
+            ],
+        ),
+        (
+            GateId::Popup,
+            &[(5, 1), (5, 2), (5, 4), (5, 6), (5, 8), (5, 9), (5, 10)],
+        ),
+        (
+            GateId::Window,
+            &[(5, 1), (5, 3), (5, 5), (5, 7), (5, 8), (5, 9), (5, 10)],
+        ),
+        (
+            GateId::License,
+            &[
+                (6, 1),
+                (6, 2),
+                (6, 3),
+                (6, 4),
+                (6, 5),
+                (6, 6),
+                (6, 7),
+                (6, 8),
+                (6, 9),
+                (6, 10),
+                (6, 11),
+            ],
+        ),
+        (
+            GateId::Record,
+            &[
+                (7, 1),
+                (7, 2),
+                (7, 3),
+                (7, 4),
+                (7, 5),
+                (7, 6),
+                (7, 7),
+                (7, 8),
+                (7, 9),
+                (7, 10),
+                (7, 11),
+                (7, 12),
+            ],
+        ),
+    ];
+
+    for (gate, expected) in mappings {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|&(requirement, criterion)| CriterionId::from_parts(requirement, criterion))
+            .collect();
+        assert_eq!(gate.criteria(), expected, "gate {gate:?}");
+    }
+}
+
+#[test]
+fn harness_events_reject_invalid_cycle_and_kind_phase_combinations() {
+    HarnessEvent::new(1, CycleKind::Popup, 1, CyclePhase::Started).unwrap();
+    HarnessEvent::new(1, CycleKind::Popup, 100, CyclePhase::Closed).unwrap();
+    HarnessEvent::new(1, CycleKind::Window, 42, CyclePhase::Destroyed).unwrap();
+
+    assert!(matches!(
+        HarnessEvent::new(1, CycleKind::Popup, 0, CyclePhase::Started),
+        Err(EvidenceError::InvalidCycle(0))
+    ));
+    assert!(matches!(
+        HarnessEvent::new(1, CycleKind::Window, 101, CyclePhase::Started),
+        Err(EvidenceError::InvalidCycle(101))
+    ));
+    assert!(matches!(
+        HarnessEvent::new(1, CycleKind::Popup, 1, CyclePhase::Created),
+        Err(EvidenceError::InvalidCyclePhase {
+            kind: CycleKind::Popup,
+            phase: CyclePhase::Created,
+        })
+    ));
+    assert!(matches!(
+        HarnessEvent::new(1, CycleKind::Window, 1, CyclePhase::Shown),
+        Err(EvidenceError::InvalidCyclePhase {
+            kind: CycleKind::Window,
+            phase: CyclePhase::Shown,
+        })
+    ));
+}
+
+#[test]
+fn run_identity_is_a_nonempty_safe_path_component() {
+    assert_eq!(
+        RunId::new("20260727T010203Z-a1b2").unwrap().as_str(),
+        "20260727T010203Z-a1b2"
+    );
+    for invalid in ["", ".", "..", "run/child", "run\nchild"] {
+        assert!(matches!(
+            RunId::new(invalid),
+            Err(EvidenceError::InvalidRunId(_))
+        ));
+    }
+}
+
+#[test]
+fn shared_status_and_error_types_retain_typed_state() {
+    assert_ne!(CriterionStatus::Unsatisfied, CriterionStatus::NotRun);
+    assert_ne!(GateStatus::Fail, GateStatus::NotRun);
+    assert_ne!(DecisionState::Pending, DecisionState::NoGo);
+
+    let gate = GateResult::new(
+        GateId::Popup,
+        GateStatus::Pass,
+        GateId::Popup.criteria().to_vec(),
+        "popup complete",
+    );
+    assert_eq!(gate.id(), GateId::Popup);
+    assert_eq!(gate.status(), GateStatus::Pass);
+    assert_eq!(gate.criteria(), GateId::Popup.criteria());
+    assert_eq!(gate.summary(), "popup complete");
+
+    let timeout = EvidenceError::Timeout {
+        kind: CycleKind::Window,
+        cycle: 17,
+    };
+    assert!(matches!(
+        timeout,
+        EvidenceError::Timeout {
+            kind: CycleKind::Window,
+            cycle: 17,
+        }
+    ));
 }

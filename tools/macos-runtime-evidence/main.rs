@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests;
 
+mod model;
+
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 compile_error!("macOS runtime evidence toolkit requires a native arm64 target");
 
