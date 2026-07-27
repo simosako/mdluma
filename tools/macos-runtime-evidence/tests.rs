@@ -4,14 +4,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::manifest::parse_artifact_manifest;
+use crate::manifest::{parse_artifact_manifest, parse_license_evidence};
 use crate::model::{
     validate_criterion_results, CriterionId, CriterionResult, CriterionStatus, CycleKind,
-    CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent, RunId,
-    ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
+    CyclePhase, DecisionState, EvidenceError, GateId, GateResult, GateStatus, HarnessEvent,
+    PermissionStatus, RunId, ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
 };
 
 const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
+const LICENSE_EVIDENCE: &str = "schema_version=1\nredistribution=unresolved\nresigning=unresolved\nlicense_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE\neula_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\npermission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\nrequired_about_text=This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.\nrequired_distribution_files=LICENSE,SCITER-ENGINE-EULA.md\n";
 
 struct TestDirectory {
     path: PathBuf,
@@ -701,6 +702,216 @@ fn artifact_manifest_rejects_noncanonical_fixed_value_representations() {
     for input in noncanonical_inputs {
         assert!(matches!(
             parse_artifact_manifest(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
+}
+
+#[test]
+fn initial_license_evidence_parses_without_guessing_provider_permissions() {
+    let evidence_path = toolkit_dir()
+        .join("../..")
+        .join(".kiro/specs/macos-sciter-runtime-evidence/evidence/license-evidence.txt");
+    let input = fs::read_to_string(evidence_path).expect("read initial license evidence");
+    let evidence = parse_license_evidence(&input).expect("parse initial license evidence");
+
+    assert_eq!(evidence.schema_version(), 1);
+    assert_eq!(evidence.redistribution(), PermissionStatus::Unresolved);
+    assert_eq!(evidence.resigning(), PermissionStatus::Unresolved);
+    assert_eq!(
+        evidence.license_source(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE"
+    );
+    assert_eq!(
+        evidence.eula_source(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md"
+    );
+    assert_eq!(
+        evidence.permission_source(),
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md"
+    );
+    assert_eq!(
+        evidence.required_about_text(),
+        "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc."
+    );
+    assert_eq!(
+        evidence.required_distribution_files(),
+        ["LICENSE".to_owned(), "SCITER-ENGINE-EULA.md".to_owned()]
+    );
+}
+
+#[test]
+fn license_evidence_accepts_all_typed_statuses_and_authoritative_permission_sources() {
+    for (text, status) in [
+        ("permitted", PermissionStatus::Permitted),
+        ("prohibited", PermissionStatus::Prohibited),
+        ("unresolved", PermissionStatus::Unresolved),
+    ] {
+        let input = LICENSE_EVIDENCE
+            .replace(
+                "redistribution=unresolved",
+                &format!("redistribution={text}"),
+            )
+            .replace("resigning=unresolved", &format!("resigning={text}"))
+            .replace(
+                "permission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md",
+                "permission_source=https://sciter.com/authoritative-permission",
+            );
+        let evidence = parse_license_evidence(&input).unwrap();
+        assert_eq!(evidence.redistribution(), status);
+        assert_eq!(evidence.resigning(), status);
+        assert_eq!(
+            evidence.permission_source(),
+            "https://sciter.com/authoritative-permission"
+        );
+    }
+}
+
+#[test]
+fn license_evidence_rejects_unknown_duplicate_missing_empty_and_invalid_status_fields() {
+    let invalid_inputs = [
+        format!("{LICENSE_EVIDENCE}extra=value\n"),
+        format!("{LICENSE_EVIDENCE}resigning=unresolved\n"),
+        LICENSE_EVIDENCE.replace(
+            "permission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\n",
+            "",
+        ),
+        LICENSE_EVIDENCE.replace("required_about_text=This", "required_about_text="),
+        LICENSE_EVIDENCE.replace("redistribution=unresolved", "redistribution=allowed"),
+        LICENSE_EVIDENCE.replace("schema_version=1", "schema_version=2"),
+    ];
+
+    for input in invalid_inputs {
+        assert!(matches!(
+            parse_license_evidence(&input),
+            Err(EvidenceError::InvalidManifest(_))
+        ));
+    }
+}
+
+#[test]
+fn license_evidence_rejects_leading_zero_schema_version() {
+    let input = LICENSE_EVIDENCE.replace("schema_version=1", "schema_version=01");
+
+    assert!(matches!(
+        parse_license_evidence(&input),
+        Err(EvidenceError::InvalidManifest(_))
+    ));
+}
+
+#[test]
+fn license_evidence_rejects_placeholder_and_invalid_permission_sources() {
+    for source in [
+        "unresolved",
+        "<official public document or written response>",
+        "https://example.com/permission",
+        "https://sciter.com/docs//permission",
+        "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/../LICENSE",
+        "../private/provider-response.txt",
+    ] {
+        let input = LICENSE_EVIDENCE.replace(
+            "https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md\nrequired_about_text",
+            &format!("{source}\nrequired_about_text"),
+        );
+        assert!(
+            matches!(
+                parse_license_evidence(&input),
+                Err(EvidenceError::InvalidManifest(_))
+            ),
+            "source: {source}"
+        );
+    }
+}
+
+#[test]
+fn license_evidence_rejects_noncanonical_about_attribution() {
+    let input = LICENSE_EVIDENCE.replace(
+        "This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.",
+        "This app uses Sciter.",
+    );
+
+    assert!(matches!(
+        parse_license_evidence(&input),
+        Err(EvidenceError::InvalidManifest(_))
+    ));
+}
+
+#[test]
+fn license_evidence_requires_the_exact_distribution_file_set_once() {
+    for files in [
+        "LICENSE",
+        "LICENSE,NOTICE",
+        "SCITER-ENGINE-EULA.md,LICENSE",
+        "LICENSE,SCITER-ENGINE-EULA.md,LICENSE",
+    ] {
+        let input = LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            &format!("required_distribution_files={files}"),
+        );
+        assert!(
+            matches!(
+                parse_license_evidence(&input),
+                Err(EvidenceError::InvalidManifest(_))
+            ),
+            "files: {files}"
+        );
+    }
+}
+
+#[test]
+fn license_evidence_rejects_noncanonical_distribution_paths() {
+    for files in [
+        "./LICENSE,SCITER-ENGINE-EULA.md",
+        "licenses//LICENSE,SCITER-ENGINE-EULA.md",
+        "LICENSE,docs//SCITER-ENGINE-EULA.md",
+        "LICENSE,SCITER-ENGINE-EULA.md/.",
+    ] {
+        let input = LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            &format!("required_distribution_files={files}"),
+        );
+        assert!(
+            matches!(
+                parse_license_evidence(&input),
+                Err(EvidenceError::InvalidManifest(_))
+            ),
+            "files: {files}"
+        );
+    }
+}
+
+#[test]
+fn license_evidence_rejects_wrong_revision_sources_and_unsafe_distribution_paths() {
+    let invalid_inputs = [
+        LICENSE_EVIDENCE.replace(
+            "e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE",
+            "031ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE",
+        ),
+        LICENSE_EVIDENCE.replace(
+            "e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md",
+            "031ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md",
+        ),
+        LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            "required_distribution_files=LICENSE,../SCITER-ENGINE-EULA.md",
+        ),
+        LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            "required_distribution_files=/LICENSE,SCITER-ENGINE-EULA.md",
+        ),
+        LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            "required_distribution_files=LICENSE,C:\\SCITER-ENGINE-EULA.md",
+        ),
+        LICENSE_EVIDENCE.replace(
+            "required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md",
+            "required_distribution_files=LICENSE,,SCITER-ENGINE-EULA.md",
+        ),
+    ];
+
+    for input in invalid_inputs {
+        assert!(matches!(
+            parse_license_evidence(&input),
             Err(EvidenceError::InvalidManifest(_))
         ));
     }

@@ -1,0 +1,8 @@
+schema_version=1
+redistribution=unresolved
+resigning=unresolved
+license_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/LICENSE
+eula_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md
+permission_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/SCITER-ENGINE-EULA.md
+required_about_text=This application uses Sciter Engine (http://sciter.com/), copyright Terra Informatica Software, Inc.
+required_distribution_files=LICENSE,SCITER-ENGINE-EULA.md

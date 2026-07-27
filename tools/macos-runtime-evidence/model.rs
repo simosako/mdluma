@@ -69,6 +69,59 @@ impl ArtifactManifest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PermissionStatus {
+    Permitted,
+    Prohibited,
+    Unresolved,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LicenseEvidence {
+    pub(crate) schema_version: u32,
+    pub(crate) redistribution: PermissionStatus,
+    pub(crate) resigning: PermissionStatus,
+    pub(crate) license_source: String,
+    pub(crate) eula_source: String,
+    pub(crate) permission_source: String,
+    pub(crate) required_about_text: String,
+    pub(crate) required_distribution_files: Vec<String>,
+}
+
+impl LicenseEvidence {
+    pub(crate) const fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    pub(crate) const fn redistribution(&self) -> PermissionStatus {
+        self.redistribution
+    }
+
+    pub(crate) const fn resigning(&self) -> PermissionStatus {
+        self.resigning
+    }
+
+    pub(crate) fn license_source(&self) -> &str {
+        &self.license_source
+    }
+
+    pub(crate) fn eula_source(&self) -> &str {
+        &self.eula_source
+    }
+
+    pub(crate) fn permission_source(&self) -> &str {
+        &self.permission_source
+    }
+
+    pub(crate) fn required_about_text(&self) -> &str {
+        &self.required_about_text
+    }
+
+    pub(crate) fn required_distribution_files(&self) -> &[String] {
+        &self.required_distribution_files
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CriterionStatus {
     Satisfied,
     Unsatisfied,

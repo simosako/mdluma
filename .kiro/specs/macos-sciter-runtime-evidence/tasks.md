@@ -29,7 +29,7 @@
   - _Boundary: ArtifactManifest_
   - _Depends: 1.2_
 
-- [ ] 1.4 license evidenceのstrict input contractと初期入力を実装する（1-3時間）
+- [x] 1.4 license evidenceのstrict input contractと初期入力を実装する（1-3時間）
   - redistributionとresigningをPermitted、Prohibited、Unresolvedのいずれかで表す。
   - LICENSE、EULA、permission source、About表記、同梱必須文書を必須入力にし、空値や不明なstatusを拒否する。
   - 固定revisionのLICENSEとSCITER-ENGINE-EULA.mdを識別し、提供元回答未取得の権限項目は推測せずUnresolvedとして表現する。
@@ -299,3 +299,4 @@
 - Task 1.1: Rust stableは`mise`管理下にあり、task-local verificationは`mise exec rust@stable -- ...`で実行する。
 - Task 1.2: Evidence Typesは静的catalogと型検証だけを所有し、67 criterion/8 gateのcompleteness判定はTask 7.2のDecisionEvaluatorに残す。
 - Task 1.3: 固定manifestはtyped値だけでなく全12 fieldのraw canonical textも一致させ、正規化で同値になる入力を拒否する。
+- Task 1.4: 未解決permissionでもsourceは固定revision EULAを明示し、statusだけを`unresolved`として保持する。
