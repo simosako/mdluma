@@ -1,8 +1,11 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fmt;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -107,6 +110,307 @@ pub(crate) enum AbiField {
 
 const VALIDATED_ABI_FIELDS: [AbiField; 2] = [AbiField::ApiVersion, AbiField::SciterVersion];
 
+type SciterExecFn = unsafe extern "C" fn(
+    bindings::UINT,
+    bindings::UINT_PTR,
+    bindings::UINT_PTR,
+) -> bindings::INT_PTR;
+type SciterCreateWindowFn = unsafe extern "C" fn(
+    bindings::UINT,
+    bindings::LPRECT,
+    bindings::LPVOID,
+    bindings::LPVOID,
+    bindings::HWND,
+) -> bindings::HWND;
+type SciterSetCallbackFn =
+    unsafe extern "C" fn(bindings::HWND, bindings::LPSciterHostCallback, bindings::LPVOID);
+type SciterLoadHtmlFn = unsafe extern "C" fn(
+    bindings::HWND,
+    bindings::LPCBYTE,
+    bindings::UINT,
+    bindings::LPCWSTR,
+) -> bindings::SBOOL;
+type SciterWindowExecFn = unsafe extern "C" fn(
+    bindings::HWND,
+    bindings::UINT,
+    bindings::UINT_PTR,
+    bindings::UINT_PTR,
+) -> bindings::INT_PTR;
+type SciterSetupDebugOutputFn =
+    unsafe extern "C" fn(bindings::HWND, bindings::LPVOID, bindings::DEBUG_OUTPUT_PROC);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LifecycleEntry {
+    SciterExec,
+    SciterCreateWindow,
+    SciterSetCallback,
+    SciterLoadHtml,
+    SciterWindowExec,
+    SciterSetupDebugOutput,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LifecycleError {
+    NotMainThread,
+    MissingEntry(LifecycleEntry),
+    NullWindow,
+    HtmlTooLarge,
+    BaseUrlNotTerminated,
+    HtmlLoadFailed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub(crate) enum AppCommand {
+    Stop = 0,
+    Init = 2,
+    Shutdown = 3,
+    LoopIteration = 6,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WindowFlags(u32);
+
+impl WindowFlags {
+    pub(crate) const MAIN: Self = Self(1 << 7);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WindowState {
+    Closed,
+    Hidden,
+    Shown,
+    Minimized,
+    Maximized,
+    FullScreen,
+    Other(bindings::INT_PTR),
+}
+
+impl WindowState {
+    const fn raw(self) -> bindings::UINT_PTR {
+        match self {
+            Self::Closed => 0,
+            Self::Hidden => 1,
+            Self::Shown => 2,
+            Self::Minimized => 3,
+            Self::Maximized => 4,
+            Self::FullScreen => 5,
+            Self::Other(value) => value as bindings::UINT_PTR,
+        }
+    }
+
+    const fn from_raw(value: bindings::INT_PTR) -> Self {
+        match value {
+            0 => Self::Closed,
+            1 => Self::Hidden,
+            2 => Self::Shown,
+            3 => Self::Minimized,
+            4 => Self::Maximized,
+            5 => Self::FullScreen,
+            other => Self::Other(other),
+        }
+    }
+}
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WindowHandle(NonNull<bindings::HWND__>);
+
+impl WindowHandle {
+    const fn raw(self) -> bindings::HWND {
+        self.0.as_ptr()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LifecycleCallResult {
+    raw: bindings::INT_PTR,
+    command: Option<AppCommand>,
+}
+
+impl LifecycleCallResult {
+    pub(crate) const fn raw(self) -> bindings::INT_PTR {
+        self.raw
+    }
+
+    pub(crate) const fn validated_fields(self) -> &'static [AbiField] {
+        &VALIDATED_ABI_FIELDS
+    }
+
+    pub(crate) const fn validates_lifecycle_api(self) -> bool {
+        false
+    }
+
+    pub(crate) const fn shutdown_complete(self) -> Option<ShutdownComplete> {
+        match self.command {
+            Some(AppCommand::Shutdown) => Some(ShutdownComplete(())),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ShutdownComplete(());
+
+pub(crate) struct LifecycleApi {
+    sciter_exec: SciterExecFn,
+    sciter_create_window: SciterCreateWindowFn,
+    sciter_set_callback: SciterSetCallbackFn,
+    sciter_load_html: SciterLoadHtmlFn,
+    sciter_window_exec: SciterWindowExecFn,
+    sciter_setup_debug_output: SciterSetupDebugOutputFn,
+    is_main_thread: fn() -> bool,
+    _main_thread_only: std::marker::PhantomData<Rc<()>>,
+}
+
+pub(crate) struct HostContext {
+    destroyed: bool,
+    is_main_thread: fn() -> bool,
+    _main_thread_only: std::marker::PhantomData<Rc<()>>,
+    _pinned: std::marker::PhantomPinned,
+}
+
+impl Drop for HostContext {
+    fn drop(&mut self) {
+        #[cfg(test)]
+        HOST_CONTEXT_DROPS.with(|drops| drops.set(drops.get() + 1));
+    }
+}
+
+pub(crate) struct HostCallbackContext {
+    context: Pin<Box<HostContext>>,
+}
+
+impl HostCallbackContext {
+    pub(crate) fn new() -> Self {
+        Self {
+            context: Box::pin(HostContext {
+                destroyed: false,
+                is_main_thread: is_process_main_thread,
+                _main_thread_only: std::marker::PhantomData,
+                _pinned: std::marker::PhantomPinned,
+            }),
+        }
+    }
+
+    pub(crate) fn stable_address(&self) -> NonNull<c_void> {
+        NonNull::from(self.context.as_ref().get_ref()).cast()
+    }
+}
+
+pub(crate) struct RegisteredHostContext {
+    context: Option<Pin<Box<HostContext>>>,
+}
+
+impl RegisteredHostContext {
+    pub(crate) fn stable_address(&self) -> NonNull<c_void> {
+        NonNull::from(self.context.as_ref().unwrap().as_ref().get_ref()).cast()
+    }
+
+    pub(crate) fn destroyed(&self) -> Result<bool, LifecycleError> {
+        let context = self.context.as_ref().unwrap().as_ref().get_ref();
+        if !(context.is_main_thread)() {
+            return Err(LifecycleError::NotMainThread);
+        }
+        Ok(context.destroyed)
+    }
+}
+
+impl Drop for RegisteredHostContext {
+    fn drop(&mut self) {
+        let context = self.context.take().unwrap();
+        if !context.as_ref().get_ref().destroyed {
+            // Sciter still owns the callback pointer. Leaking is safer than a dangling callback.
+            std::mem::forget(context);
+        }
+    }
+}
+
+pub(crate) struct DebugContext {
+    protocol_prefix: &'static str,
+    callback_count: usize,
+    is_main_thread: fn() -> bool,
+    _main_thread_only: std::marker::PhantomData<Rc<()>>,
+    _pinned: std::marker::PhantomPinned,
+}
+
+pub(crate) struct DebugCallbackContext {
+    context: Pin<Box<DebugContext>>,
+}
+
+impl DebugCallbackContext {
+    pub(crate) fn new(protocol_prefix: &'static str) -> Self {
+        Self {
+            context: Box::pin(DebugContext {
+                protocol_prefix,
+                callback_count: 0,
+                is_main_thread: is_process_main_thread,
+                _main_thread_only: std::marker::PhantomData,
+                _pinned: std::marker::PhantomPinned,
+            }),
+        }
+    }
+
+    pub(crate) fn stable_address(&self) -> NonNull<c_void> {
+        NonNull::from(self.context.as_ref().get_ref()).cast()
+    }
+}
+
+pub(crate) struct RegisteredDebugContext {
+    context: Option<Pin<Box<DebugContext>>>,
+}
+
+impl RegisteredDebugContext {
+    pub(crate) fn stable_address(&self) -> NonNull<c_void> {
+        NonNull::from(self.context.as_ref().unwrap().as_ref().get_ref()).cast()
+    }
+
+    pub(crate) fn protocol_prefix(&self) -> &'static str {
+        self.context
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .get_ref()
+            .protocol_prefix
+    }
+
+    pub(crate) fn callback_count(&self) -> Result<usize, LifecycleError> {
+        let context = self.context.as_ref().unwrap().as_ref().get_ref();
+        if !(context.is_main_thread)() {
+            return Err(LifecycleError::NotMainThread);
+        }
+        Ok(context.callback_count)
+    }
+
+    pub(crate) fn release_after_shutdown(mut self, _complete: ShutdownComplete) {
+        drop(self.context.take());
+    }
+}
+
+impl Drop for RegisteredDebugContext {
+    fn drop(&mut self) {
+        if let Some(context) = self.context.take() {
+            // The global debug callback can run until shutdown has returned.
+            std::mem::forget(context);
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static HOST_CONTEXT_DROPS: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn host_context_drop_count_for_tests() -> usize {
+    HOST_CONTEXT_DROPS.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_context_drop_counts_for_tests() {
+    HOST_CONTEXT_DROPS.with(|drops| drops.set(0));
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ThreadContext {
     Main,
@@ -175,6 +479,176 @@ pub(crate) enum RuntimeAbiError {
     NullSciterVersion,
 }
 
+const SC_ENGINE_DESTROYED: bindings::UINT = 0x05;
+const SCITER_WINDOW_SET_STATE: bindings::UINT = 1;
+const SCITER_WINDOW_GET_STATE: bindings::UINT = 2;
+
+unsafe extern "C" fn host_callback(
+    notification: bindings::LPSCITER_CALLBACK_NOTIFICATION,
+    context: bindings::LPVOID,
+) -> bindings::UINT {
+    if notification.is_null() || context.is_null() {
+        return 0;
+    }
+    let context = unsafe { &mut *context.cast::<HostContext>() };
+    if !(context.is_main_thread)() {
+        return 0;
+    }
+    if unsafe { (*notification).code } == SC_ENGINE_DESTROYED {
+        context.destroyed = true;
+    }
+    0
+}
+
+unsafe extern "C" fn debug_callback(
+    context: bindings::LPVOID,
+    _subsystem: bindings::UINT,
+    _severity: bindings::UINT,
+    _text: bindings::LPCWSTR,
+    _text_length: bindings::UINT,
+) {
+    if context.is_null() {
+        return;
+    }
+    let context = unsafe { &mut *context.cast::<DebugContext>() };
+    if (context.is_main_thread)() {
+        context.callback_count += 1;
+    }
+}
+
+impl LifecycleApi {
+    fn ensure_main_thread(&self) -> Result<(), LifecycleError> {
+        if (self.is_main_thread)() {
+            Ok(())
+        } else {
+            Err(LifecycleError::NotMainThread)
+        }
+    }
+
+    pub(crate) fn exec(
+        &self,
+        command: AppCommand,
+        p1: bindings::UINT_PTR,
+        p2: bindings::UINT_PTR,
+    ) -> Result<LifecycleCallResult, LifecycleError> {
+        self.ensure_main_thread()?;
+        let raw = unsafe { (self.sciter_exec)(command as bindings::UINT, p1, p2) };
+        Ok(LifecycleCallResult {
+            raw,
+            command: Some(command),
+        })
+    }
+
+    pub(crate) fn create_window(
+        &self,
+        flags: WindowFlags,
+        frame: Option<&mut bindings::tagRECT>,
+        parent: Option<WindowHandle>,
+    ) -> Result<WindowHandle, LifecycleError> {
+        self.ensure_main_thread()?;
+        let frame = frame.map_or(std::ptr::null_mut(), |frame| frame);
+        let parent = parent.map_or(std::ptr::null_mut(), WindowHandle::raw);
+        let window = unsafe {
+            (self.sciter_create_window)(
+                flags.0,
+                frame,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                parent,
+            )
+        };
+        NonNull::new(window)
+            .map(WindowHandle)
+            .ok_or(LifecycleError::NullWindow)
+    }
+
+    pub(crate) fn register_host_callback(
+        &self,
+        window: WindowHandle,
+        mut owner: HostCallbackContext,
+    ) -> Result<RegisteredHostContext, LifecycleError> {
+        self.ensure_main_thread()?;
+        unsafe {
+            owner.context.as_mut().get_unchecked_mut().is_main_thread = self.is_main_thread;
+            (self.sciter_set_callback)(
+                window.raw(),
+                Some(host_callback),
+                owner.stable_address().as_ptr(),
+            );
+        }
+        Ok(RegisteredHostContext {
+            context: Some(owner.context),
+        })
+    }
+
+    pub(crate) fn load_html(
+        &self,
+        window: WindowHandle,
+        html: &[u8],
+        base_url: Option<&[u16]>,
+    ) -> Result<LifecycleCallResult, LifecycleError> {
+        self.ensure_main_thread()?;
+        let length = u32::try_from(html.len()).map_err(|_| LifecycleError::HtmlTooLarge)?;
+        let base_url = match base_url {
+            Some(url) if url.last() == Some(&0) => url.as_ptr(),
+            Some(_) => return Err(LifecycleError::BaseUrlNotTerminated),
+            None => std::ptr::null(),
+        };
+        let loaded =
+            unsafe { (self.sciter_load_html)(window.raw(), html.as_ptr(), length, base_url) };
+        if loaded == 0 {
+            return Err(LifecycleError::HtmlLoadFailed);
+        }
+        Ok(LifecycleCallResult {
+            raw: loaded.into(),
+            command: None,
+        })
+    }
+
+    pub(crate) fn set_window_state(
+        &self,
+        window: WindowHandle,
+        state: WindowState,
+        force: bool,
+    ) -> Result<LifecycleCallResult, LifecycleError> {
+        self.ensure_main_thread()?;
+        let raw = unsafe {
+            (self.sciter_window_exec)(
+                window.raw(),
+                SCITER_WINDOW_SET_STATE,
+                state.raw(),
+                force as bindings::UINT_PTR,
+            )
+        };
+        Ok(LifecycleCallResult { raw, command: None })
+    }
+
+    pub(crate) fn window_state(&self, window: WindowHandle) -> Result<WindowState, LifecycleError> {
+        self.ensure_main_thread()?;
+        let raw = unsafe { (self.sciter_window_exec)(window.raw(), SCITER_WINDOW_GET_STATE, 0, 0) };
+        Ok(WindowState::from_raw(raw))
+    }
+
+    pub(crate) fn register_debug_output(
+        &self,
+        window: Option<WindowHandle>,
+        mut owner: DebugCallbackContext,
+    ) -> Result<RegisteredDebugContext, LifecycleError> {
+        self.ensure_main_thread()?;
+        unsafe {
+            owner.context.as_mut().get_unchecked_mut().is_main_thread = self.is_main_thread;
+            (self.sciter_setup_debug_output)(
+                window.map_or(std::ptr::null_mut(), WindowHandle::raw),
+                owner.stable_address().as_ptr(),
+                Some(debug_callback),
+            );
+        }
+        Ok(RegisteredDebugContext {
+            context: Some(owner.context),
+        })
+    }
+}
+
 impl SciterRuntime {
     /// Loads only the already-verified manifest runtime. The library is intentionally never
     /// closed, so Sciter code and its API table remain loaded until process termination.
@@ -196,6 +670,50 @@ impl SciterRuntime {
 
     pub(crate) fn api_table(&self) -> NonNull<bindings::ISciterAPI> {
         self.api
+    }
+
+    pub(crate) fn lifecycle_api(&self) -> Result<LifecycleApi, LifecycleError> {
+        self.lifecycle_api_checked(is_process_main_thread)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lifecycle_api_with_main_thread_check(
+        &self,
+        is_main_thread: fn() -> bool,
+    ) -> Result<LifecycleApi, LifecycleError> {
+        self.lifecycle_api_checked(is_main_thread)
+    }
+
+    fn lifecycle_api_checked(
+        &self,
+        is_main_thread: fn() -> bool,
+    ) -> Result<LifecycleApi, LifecycleError> {
+        if !is_main_thread() {
+            return Err(LifecycleError::NotMainThread);
+        }
+        let api = unsafe { self.api.as_ref() };
+        Ok(LifecycleApi {
+            sciter_exec: api
+                .SciterExec
+                .ok_or(LifecycleError::MissingEntry(LifecycleEntry::SciterExec))?,
+            sciter_create_window: api.SciterCreateWindow.ok_or(LifecycleError::MissingEntry(
+                LifecycleEntry::SciterCreateWindow,
+            ))?,
+            sciter_set_callback: api.SciterSetCallback.ok_or(LifecycleError::MissingEntry(
+                LifecycleEntry::SciterSetCallback,
+            ))?,
+            sciter_load_html: api
+                .SciterLoadHtml
+                .ok_or(LifecycleError::MissingEntry(LifecycleEntry::SciterLoadHtml))?,
+            sciter_window_exec: api.SciterWindowExec.ok_or(LifecycleError::MissingEntry(
+                LifecycleEntry::SciterWindowExec,
+            ))?,
+            sciter_setup_debug_output: api.SciterSetupDebugOutput.ok_or(
+                LifecycleError::MissingEntry(LifecycleEntry::SciterSetupDebugOutput),
+            )?,
+            is_main_thread,
+            _main_thread_only: std::marker::PhantomData,
+        })
     }
 
     pub(crate) fn abi_smoke(

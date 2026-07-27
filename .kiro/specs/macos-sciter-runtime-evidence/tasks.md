@@ -81,7 +81,7 @@
   - _Requirements: 3.6, 3.7, 3.9, 4.3, 4.4, 4.5, 4.6, 4.8, 4.9, 4.10_
   - _Boundary: SciterRuntime_
 
-- [ ] 3.3 lifecycleで必要なSciter callの安全境界を実装する（1-3時間）
+- [x] 3.3 lifecycleで必要なSciter callの安全境界を実装する（1-3時間）
   - application INIT、LOOP ITERATION、STOP、SHUTDOWNとwindow create、callback、HTML load、state操作、debug outputを個別にnull checkする。
   - API callとcallbackをmain threadに限定し、host/debug contextをstable addressで保持する。
   - destroy callbackではflagだけを設定し、callback復帰後のownerだけがcontextを解放できる。
@@ -305,3 +305,4 @@
 - Task 2.3: 未収集criterionが残っていても既知の`Unsatisfied`はgateを`Fail`にできるが、不完全な入力から`Pass`は生成しない。
 - Task 3.1: Sciter runtimeはmanifestと一致するcanonical absolute pathだけを`RTLD_NOW | RTLD_LOCAL`で開き、handleをprocess lifetimeまで保持する。
 - Task 3.2: committed bindingsのABI claimはAPI `version` fieldと`SciterVersion` entryだけに限定し、selector順序`0,1,2,3`を固定する。
+- Task 3.3: registered callback contextは`Pin<Box<_>>`で固定し、destroy callback復帰後までownerが解放しない。

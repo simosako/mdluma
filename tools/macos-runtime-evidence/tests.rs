@@ -18,7 +18,9 @@ use crate::model::{
     PermissionStatus, RunId, ALL_CRITERIA, ALL_GATES, SOURCE_CRITERIA,
 };
 use crate::sciter::{
-    AbiField, DynamicLoader, RuntimeAbiError, RuntimeLoadError, SciterRuntime, ThreadContext,
+    host_context_drop_count_for_tests, reset_context_drop_counts_for_tests, AbiField, AppCommand,
+    DebugCallbackContext, DynamicLoader, HostCallbackContext, LifecycleEntry, LifecycleError,
+    RuntimeAbiError, RuntimeLoadError, SciterRuntime, ThreadContext, WindowFlags, WindowState,
     RTLD_LOCAL, RTLD_NOW,
 };
 
@@ -201,6 +203,102 @@ fn synthetic_api_table(
         Box::new(unsafe { std::mem::zeroed() });
     table.version = api_version;
     table.SciterVersion = version;
+    table
+}
+
+thread_local! {
+    static LIFECYCLE_CALLS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    static LIFECYCLE_COMMANDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    static SYNTHETIC_MAIN_THREAD: RefCell<bool> = const { RefCell::new(true) };
+}
+
+fn synthetic_main_thread_check() -> bool {
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow())
+}
+
+unsafe extern "C" fn synthetic_sciter_exec(
+    command: u32,
+    _p1: crate::sciter::bindings::UINT_PTR,
+    _p2: crate::sciter::bindings::UINT_PTR,
+) -> crate::sciter::bindings::INT_PTR {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("exec"));
+    LIFECYCLE_COMMANDS.with(|commands| commands.borrow_mut().push(command));
+    1
+}
+
+unsafe extern "C" fn synthetic_create_window(
+    _flags: u32,
+    _frame: crate::sciter::bindings::LPRECT,
+    _reserved1: *mut std::ffi::c_void,
+    _reserved2: *mut std::ffi::c_void,
+    _parent: crate::sciter::bindings::HWND,
+) -> crate::sciter::bindings::HWND {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("create"));
+    std::ptr::NonNull::<crate::sciter::bindings::HWND__>::dangling().as_ptr()
+}
+
+unsafe extern "C" fn synthetic_set_callback(
+    _window: crate::sciter::bindings::HWND,
+    callback: crate::sciter::bindings::LPSciterHostCallback,
+    context: *mut std::ffi::c_void,
+) {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("callback"));
+    let mut notification = crate::sciter::bindings::SCITER_CALLBACK_NOTIFICATION {
+        code: 5,
+        hwnd: std::ptr::null_mut(),
+    };
+    unsafe { callback.unwrap()(&mut notification, context) };
+}
+
+unsafe extern "C" fn synthetic_set_callback_without_notification(
+    _window: crate::sciter::bindings::HWND,
+    _callback: crate::sciter::bindings::LPSciterHostCallback,
+    _context: *mut std::ffi::c_void,
+) {
+}
+
+unsafe extern "C" fn synthetic_load_html(
+    _window: crate::sciter::bindings::HWND,
+    _html: *const u8,
+    _length: u32,
+    _base_url: *const u16,
+) -> i32 {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("html"));
+    1
+}
+
+unsafe extern "C" fn synthetic_window_exec(
+    _window: crate::sciter::bindings::HWND,
+    command: u32,
+    _p1: crate::sciter::bindings::UINT_PTR,
+    _p2: crate::sciter::bindings::UINT_PTR,
+) -> crate::sciter::bindings::INT_PTR {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("state"));
+    if command == 2 {
+        2
+    } else {
+        1
+    }
+}
+
+unsafe extern "C" fn synthetic_setup_debug_output(
+    _window: crate::sciter::bindings::HWND,
+    callback_context: *mut std::ffi::c_void,
+    callback: crate::sciter::bindings::DEBUG_OUTPUT_PROC,
+) {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("debug"));
+    let text = [b'o' as u16, b'k' as u16];
+    unsafe { callback.unwrap()(callback_context, 0, 0, text.as_ptr(), text.len() as u32) };
+}
+
+fn synthetic_lifecycle_api_table() -> Box<crate::sciter::bindings::ISciterAPI> {
+    let mut table = synthetic_api_table(10, Some(synthetic_sciter_version));
+    table.SciterExec = Some(synthetic_sciter_exec);
+    table.SciterCreateWindow = Some(synthetic_create_window);
+    table.SciterSetCallback = Some(synthetic_set_callback);
+    table.SciterLoadHtml = Some(synthetic_load_html);
+    table.SciterWindowExec = Some(synthetic_window_exec);
+    table.SciterSetupDebugOutput = Some(synthetic_setup_debug_output);
     table
 }
 
@@ -388,6 +486,177 @@ fn committed_bindings_abi_smoke_enforces_main_thread_without_calling_sciter() {
         Err(RuntimeAbiError::NotMainThread)
     );
     VERSION_SELECTORS.with(|selectors| assert!(selectors.borrow().is_empty()));
+}
+
+#[test]
+fn lifecycle_api_readiness_identifies_each_required_missing_entry() {
+    let cases = [
+        LifecycleEntry::SciterExec,
+        LifecycleEntry::SciterCreateWindow,
+        LifecycleEntry::SciterSetCallback,
+        LifecycleEntry::SciterLoadHtml,
+        LifecycleEntry::SciterWindowExec,
+        LifecycleEntry::SciterSetupDebugOutput,
+    ];
+
+    for missing in cases {
+        let mut table = synthetic_lifecycle_api_table();
+        match missing {
+            LifecycleEntry::SciterExec => table.SciterExec = None,
+            LifecycleEntry::SciterCreateWindow => table.SciterCreateWindow = None,
+            LifecycleEntry::SciterSetCallback => table.SciterSetCallback = None,
+            LifecycleEntry::SciterLoadHtml => table.SciterLoadHtml = None,
+            LifecycleEntry::SciterWindowExec => table.SciterWindowExec = None,
+            LifecycleEntry::SciterSetupDebugOutput => table.SciterSetupDebugOutput = None,
+        }
+        let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+        assert!(matches!(
+            runtime.lifecycle_api_with_main_thread_check(synthetic_main_thread_check),
+            Err(LifecycleError::MissingEntry(entry)) if entry == missing
+        ));
+    }
+}
+
+#[test]
+fn lifecycle_calls_reject_non_main_thread_before_entering_sciter() {
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().clear());
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let table = synthetic_lifecycle_api_table();
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let window = api.create_window(WindowFlags::MAIN, None, None).unwrap();
+    LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().clear());
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = false);
+
+    assert_eq!(
+        api.exec(AppCommand::Init, 0, 0),
+        Err(LifecycleError::NotMainThread)
+    );
+    assert_eq!(
+        api.create_window(WindowFlags::MAIN, None, None),
+        Err(LifecycleError::NotMainThread)
+    );
+    assert_eq!(
+        api.load_html(window, b"<html></html>", None),
+        Err(LifecycleError::NotMainThread)
+    );
+    assert_eq!(
+        api.set_window_state(window, WindowState::Shown, false),
+        Err(LifecycleError::NotMainThread)
+    );
+    assert_eq!(api.window_state(window), Err(LifecycleError::NotMainThread));
+    assert!(matches!(
+        api.register_host_callback(window, HostCallbackContext::new()),
+        Err(LifecycleError::NotMainThread)
+    ));
+    assert!(matches!(
+        api.register_debug_output(None, DebugCallbackContext::new("MDLUMA_EVIDENCE\t")),
+        Err(LifecycleError::NotMainThread)
+    ));
+    LIFECYCLE_CALLS.with(|calls| assert!(calls.borrow().is_empty()));
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+}
+
+#[test]
+fn host_context_address_is_stable_and_destroyed_context_drops_only_after_callback_returns() {
+    reset_context_drop_counts_for_tests();
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let table = synthetic_lifecycle_api_table();
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let window = api.create_window(WindowFlags::MAIN, None, None).unwrap();
+    let context = HostCallbackContext::new();
+    let address = context.stable_address();
+
+    let registered = api.register_host_callback(window, context).unwrap();
+
+    assert_eq!(registered.stable_address(), address);
+    assert!(registered.destroyed().unwrap());
+    assert_eq!(host_context_drop_count_for_tests(), 0);
+    drop(registered);
+    assert_eq!(host_context_drop_count_for_tests(), 1);
+}
+
+#[test]
+fn registered_host_context_is_not_freed_before_destroy_notification() {
+    reset_context_drop_counts_for_tests();
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let mut table = synthetic_lifecycle_api_table();
+    table.SciterSetCallback = Some(synthetic_set_callback_without_notification);
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let window = api.create_window(WindowFlags::MAIN, None, None).unwrap();
+
+    drop(
+        api.register_host_callback(window, HostCallbackContext::new())
+            .unwrap(),
+    );
+
+    assert_eq!(host_context_drop_count_for_tests(), 0);
+}
+
+#[test]
+fn lifecycle_success_preserves_the_task_3_2_limited_abi_claim() {
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let table = synthetic_lifecycle_api_table();
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let result = api.exec(AppCommand::LoopIteration, 0, 0).unwrap();
+
+    assert_eq!(
+        result.validated_fields(),
+        &[AbiField::ApiVersion, AbiField::SciterVersion]
+    );
+    assert!(!result.validates_lifecycle_api());
+}
+
+#[test]
+fn lifecycle_helpers_use_official_commands_and_keep_debug_context_stable_through_shutdown() {
+    LIFECYCLE_COMMANDS.with(|commands| commands.borrow_mut().clear());
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let table = synthetic_lifecycle_api_table();
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let window = api.create_window(WindowFlags::MAIN, None, None).unwrap();
+    let debug = DebugCallbackContext::new("MDLUMA_EVIDENCE\t");
+    let address = debug.stable_address();
+    let registered_debug = api.register_debug_output(None, debug).unwrap();
+
+    assert_eq!(registered_debug.stable_address(), address);
+    assert_eq!(registered_debug.protocol_prefix(), "MDLUMA_EVIDENCE\t");
+    assert_eq!(registered_debug.callback_count().unwrap(), 1);
+    assert_eq!(
+        api.load_html(window, b"<html></html>", None).unwrap().raw(),
+        1
+    );
+    assert_eq!(
+        api.set_window_state(window, WindowState::Shown, false)
+            .unwrap()
+            .raw(),
+        1
+    );
+    assert_eq!(api.window_state(window).unwrap(), WindowState::Shown);
+    api.exec(AppCommand::Init, 0, 0).unwrap();
+    api.exec(AppCommand::LoopIteration, 0, 0).unwrap();
+    api.exec(AppCommand::Stop, 0, 0).unwrap();
+    let shutdown = api
+        .exec(AppCommand::Shutdown, 0, 0)
+        .unwrap()
+        .shutdown_complete()
+        .unwrap();
+    registered_debug.release_after_shutdown(shutdown);
+
+    LIFECYCLE_COMMANDS.with(|commands| assert_eq!(*commands.borrow(), [2, 6, 0, 3]));
 }
 
 #[test]
