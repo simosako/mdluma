@@ -2,6 +2,7 @@
 mod tests;
 
 mod artifact;
+mod harness;
 mod manifest;
 mod model;
 mod sciter;

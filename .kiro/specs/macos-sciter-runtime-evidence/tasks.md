@@ -89,7 +89,7 @@
   - _Requirements: 4.8, 4.9, 4.10, 5.3, 5.5, 5.8_
   - _Boundary: SciterRuntime_
 
-- [ ] 3.4 one-shot API/ABI child modeとnative smoke testを実装する（1-3時間）
+- [x] 3.4 one-shot API/ABI child modeとnative smoke testを実装する（1-3時間）
   - fixed runtimeのload、SciterAPI解決、non-null table、API version、engine version、bindings経由version取得を固定順序で実行する。
   - failure stage、stdout、stderr、exit statusをsupervisorが解釈できる形で出力する。
   - fixed dylibを用いたnative arm64実行で、API 10とengine 6.0.3.18、限定ABI scopeが観測可能になる。
@@ -306,3 +306,4 @@
 - Task 3.1: Sciter runtimeはmanifestと一致するcanonical absolute pathだけを`RTLD_NOW | RTLD_LOCAL`で開き、handleをprocess lifetimeまで保持する。
 - Task 3.2: committed bindingsのABI claimはAPI `version` fieldと`SciterVersion` entryだけに限定し、selector順序`0,1,2,3`を固定する。
 - Task 3.3: registered callback contextは`Pin<Box<_>>`で固定し、destroy callback復帰後までownerが解放しない。
+- Task 3.4: childはunsafe operation直前のstageをflushし、exit未観測時はgate Passではなく`success_candidate`だけを出力する。

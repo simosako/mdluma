@@ -1,7 +1,9 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -137,6 +139,409 @@ fn write_header_fixture(repository: &TestDirectory, version: [u32; 4], api: u32)
 
 fn fixed_manifest() -> crate::model::ArtifactManifest {
     parse_artifact_manifest(ARTIFACT_MANIFEST).unwrap()
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ParsedChildLine {
+    record: String,
+    fields: BTreeMap<String, String>,
+}
+
+fn parse_child_protocol(stdout: &[u8]) -> Result<Vec<ParsedChildLine>, String> {
+    std::str::from_utf8(stdout)
+        .map_err(|error| error.to_string())?
+        .lines()
+        .filter(|line| line.starts_with("MDLUMA_EVIDENCE\t"))
+        .map(parse_child_protocol_line)
+        .collect()
+}
+
+fn parse_child_protocol_line(line: &str) -> Result<ParsedChildLine, String> {
+    let columns: Vec<_> = line.split('\t').collect();
+    if columns.len() < 4
+        || columns[0] != "MDLUMA_EVIDENCE"
+        || columns[1] != "1"
+        || columns[2] != "api_abi"
+    {
+        return Err("invalid protocol envelope".to_owned());
+    }
+    let expected_keys: &[&str] = match columns[3] {
+        "progress" => &["stage", "state", "actual", "expected"],
+        "result" => &[
+            "status",
+            "actual_api",
+            "expected_api",
+            "actual_engine",
+            "expected_engine",
+            "scope",
+            "lifecycle_abi_validated",
+            "process_architecture",
+            "thread_context",
+            "failure_stage",
+        ],
+        _ => return Err("invalid protocol record type".to_owned()),
+    };
+    if columns.len() != expected_keys.len() + 4 {
+        return Err("invalid protocol field count".to_owned());
+    }
+    let mut fields = BTreeMap::new();
+    for (column, expected_key) in columns[4..].iter().zip(expected_keys) {
+        let (key, value) = column
+            .split_once('=')
+            .ok_or_else(|| "protocol field is not key=value".to_owned())?;
+        if key != *expected_key || value.is_empty() || value.contains('=') {
+            return Err("invalid protocol key or value".to_owned());
+        }
+        fields.insert(key.to_owned(), decode_protocol_value(value)?);
+    }
+    Ok(ParsedChildLine {
+        record: columns[3].to_owned(),
+        fields,
+    })
+}
+
+fn decode_protocol_value(value: &str) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            if bytes[index].is_ascii_control() {
+                return Err("unescaped protocol control byte".to_owned());
+            }
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        if index + 2 >= bytes.len() {
+            return Err("truncated protocol escape".to_owned());
+        }
+        let escaped = match &bytes[index + 1..=index + 2] {
+            b"09" => b'\t',
+            b"0A" => b'\n',
+            b"0D" => b'\r',
+            b"25" => b'%',
+            b"3D" => b'=',
+            _ => return Err("unsupported protocol escape".to_owned()),
+        };
+        decoded.push(escaped);
+        index += 3;
+    }
+    String::from_utf8(decoded).map_err(|error| error.to_string())
+}
+
+fn compile_api_abi_fixture(label: &str) -> (TestDirectory, PathBuf) {
+    let directory = TestDirectory::new(label);
+    let source_path = directory.path.join("api-abi-fixture.rs");
+    let binary_path = directory.path.join("api-abi-fixture");
+    let source = format!(
+        r#"
+#[path = {model_path:?}]
+mod model;
+#[path = {manifest_path:?}]
+mod manifest;
+#[path = {sciter_path:?}]
+mod sciter;
+#[path = {harness_path:?}]
+mod harness;
+
+fn main() {{
+    let manifest = manifest::parse_artifact_manifest({manifest:?}).unwrap();
+    let mode = std::env::args().nth(1).unwrap();
+    let successful_probe = |emit: &mut dyn FnMut(harness::ProbeEvent)| {{
+        for (stage, actual, expected) in [
+            (harness::HarnessStage::RuntimeLoad, "loaded", "loaded"),
+            (harness::HarnessStage::SciterApiExport, "resolved", "resolved"),
+            (harness::HarnessStage::ApiTable, "non_null", "non_null"),
+            (harness::HarnessStage::ApiVersion, "10", "10"),
+            (harness::HarnessStage::SciterVersionCall, "6.0.3.18", "6.0.3.18"),
+        ] {{
+            emit(harness::ProbeEvent::entered(stage));
+            emit(harness::ProbeEvent::completed(stage, actual, expected));
+        }}
+        Ok(harness::ApiAbiValues::new(10, [6, 0, 3, 18]))
+    }};
+    let result = match mode.as_str() {{
+        "success" | "success-nonzero" | "success-abort" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            successful_probe,
+        ),
+        "api-mismatch" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            |emit| {{
+                successful_probe(emit)?;
+                Ok(harness::ApiAbiValues::new(11, [6, 0, 3, 18]))
+            }},
+        ),
+        "engine-mismatch" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            |emit| {{
+                successful_probe(emit)?;
+                Ok(harness::ApiAbiValues::new(10, [6, 0, 3, 19]))
+            }},
+        ),
+        "load-failure" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            |emit| {{
+                emit(harness::ProbeEvent::entered(harness::HarnessStage::RuntimeLoad));
+                Err(harness::ApiAbiFailure::new(harness::HarnessStage::RuntimeLoad, "fixture load failure"))
+            }},
+        ),
+        "export-failure" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            |emit| {{
+                emit(harness::ProbeEvent::entered(harness::HarnessStage::SciterApiExport));
+                Err(harness::ApiAbiFailure::new(harness::HarnessStage::SciterApiExport, "fixture export failure"))
+            }},
+        ),
+        "table-failure" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            true,
+            |emit| {{
+                emit(harness::ProbeEvent::entered(harness::HarnessStage::ApiTable));
+                Err(harness::ApiAbiFailure::new(harness::HarnessStage::ApiTable, "fixture null table"))
+            }},
+        ),
+        "architecture-failure" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "x86_64",
+            true,
+            |_| panic!("runtime probe must not run for a non-arm64 process"),
+        ),
+        "thread-failure" => harness::run_api_abi_child_with(
+            std::path::Path::new("/fixed/libsciter.dylib"),
+            &manifest,
+            "arm64",
+            false,
+            |_| panic!("runtime probe must not run off the main thread"),
+        ),
+        _ => panic!("unknown fixture mode"),
+    }};
+    if result.is_err() {{
+        std::process::exit(1);
+    }}
+    match mode.as_str() {{
+        "success-nonzero" => std::process::exit(23),
+        "success-abort" => std::process::abort(),
+        _ => {{}},
+    }}
+}}
+"#,
+        model_path = toolkit_dir().join("model.rs"),
+        manifest_path = toolkit_dir().join("manifest.rs"),
+        sciter_path = toolkit_dir().join("sciter.rs"),
+        harness_path = toolkit_dir().join("harness.rs"),
+        manifest = ARTIFACT_MANIFEST,
+    );
+    fs::write(&source_path, source).unwrap();
+    compile_rust_source(&source_path, &binary_path);
+    (directory, binary_path)
+}
+
+fn compile_rust_source(source: &Path, binary: &Path) {
+    let mut compiler = if let Some(rustc) = std::env::var_os("RUSTC") {
+        Command::new(rustc)
+    } else {
+        let mut command = Command::new("mise");
+        command.args(["exec", "rust@stable", "--", "rustc"]);
+        command
+    };
+    let compilation = compiler
+        .args(["--edition=2021"])
+        .arg(source)
+        .arg("-o")
+        .arg(binary)
+        .output()
+        .unwrap();
+    assert!(
+        compilation.status.success(),
+        "fixture compilation failed: {}",
+        String::from_utf8_lossy(&compilation.stderr)
+    );
+}
+
+#[test]
+fn api_abi_child_success_emits_fixed_order_versioned_protocol_and_exits_zero() {
+    let (_directory, binary) = compile_api_abi_fixture("api-abi-success");
+    let output = Command::new(binary).arg("success").output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let protocol = parse_child_protocol(&output.stdout).unwrap();
+    assert_eq!(
+        protocol
+            .iter()
+            .filter(|line| line.record == "progress")
+            .map(|line| (line.fields["stage"].as_str(), line.fields["state"].as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("runtime_load", "entered"),
+            ("runtime_load", "completed"),
+            ("sciter_api_export", "entered"),
+            ("sciter_api_export", "completed"),
+            ("api_table", "entered"),
+            ("api_table", "completed"),
+            ("api_version", "entered"),
+            ("api_version", "completed"),
+            ("sciter_version_call", "entered"),
+            ("sciter_version_call", "completed"),
+        ]
+    );
+    let result = protocol.last().unwrap();
+    assert_eq!(result.record, "result");
+    assert_eq!(result.fields["status"], "success_candidate");
+    assert_eq!(result.fields["actual_api"], "10");
+    assert_eq!(result.fields["actual_engine"], "6.0.3.18");
+    assert_eq!(result.fields["scope"], "api_version+SciterVersion");
+    assert!(!String::from_utf8(output.stdout)
+        .unwrap()
+        .contains("gate=pass"));
+}
+
+#[test]
+fn child_protocol_parser_rejects_bad_envelopes_fields_and_escaping() {
+    for invalid in [
+        "OTHER\t1\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=x\texpected=x",
+        "MDLUMA_EVIDENCE\t2\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=x\texpected=x",
+        "MDLUMA_EVIDENCE\t1\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=x",
+        "MDLUMA_EVIDENCE\t1\tapi_abi\tprogress\tstate=entered\tstage=x\tactual=x\texpected=x",
+        "MDLUMA_EVIDENCE\t1\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=bad%0x\texpected=x",
+        "MDLUMA_EVIDENCE\t1\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=a=b\texpected=x",
+    ] {
+        assert!(parse_child_protocol_line(invalid).is_err(), "{invalid}");
+    }
+    let parsed = parse_child_protocol_line(
+        "MDLUMA_EVIDENCE\t1\tapi_abi\tprogress\tstage=x\tstate=entered\tactual=a%25b%3Dc\texpected=x",
+    )
+    .unwrap();
+    assert_eq!(parsed.fields["actual"], "a%b=c");
+}
+
+#[test]
+fn api_abi_child_mismatch_is_nonzero_and_never_reports_pass_gates() {
+    let (_directory, binary) = compile_api_abi_fixture("api-abi-mismatch");
+    let output = Command::new(binary).arg("api-mismatch").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    parse_child_protocol(stdout.as_bytes()).unwrap();
+    assert!(stdout.contains("stage=api_version\tstate=failed\tactual=11\texpected=10"));
+    assert!(stdout.contains("failure_stage=api_version"));
+    assert!(!stdout.contains("api_gate="));
+    assert!(!stdout.contains("abi_gate="));
+    assert_eq!(
+        stderr,
+        "api-abi child failed: stage=api_version diagnostic=actual API version 11 did not match expected 10\n"
+    );
+}
+
+#[test]
+fn api_abi_child_load_and_thread_failures_are_nonzero_with_separate_diagnostics() {
+    let (_directory, binary) = compile_api_abi_fixture("api-abi-failures");
+
+    for (mode, stage, diagnostic) in [
+        ("load-failure", "runtime_load", "fixture load failure"),
+        (
+            "export-failure",
+            "sciter_api_export",
+            "fixture export failure",
+        ),
+        ("table-failure", "api_table", "fixture null table"),
+        (
+            "architecture-failure",
+            "process_architecture",
+            "child process architecture x86_64 did not match expected arm64",
+        ),
+        (
+            "thread-failure",
+            "thread_context",
+            "child must run on the process main thread",
+        ),
+    ] {
+        let output = Command::new(&binary).arg(mode).output().unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        parse_child_protocol(stdout.as_bytes()).unwrap();
+        assert!(stdout.contains(&format!("failure_stage={stage}")));
+        assert!(!stdout.contains("api_gate="));
+        assert!(!stdout.contains("abi_gate="));
+        assert_eq!(
+            stderr,
+            format!("api-abi child failed: stage={stage} diagnostic={diagnostic}\n")
+        );
+    }
+}
+
+#[test]
+fn api_abi_child_engine_mismatch_is_nonzero_and_reports_both_versions() {
+    let (_directory, binary) = compile_api_abi_fixture("api-abi-engine-mismatch");
+    let output = Command::new(binary)
+        .arg("engine-mismatch")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout
+        .contains("stage=sciter_version_call\tstate=failed\tactual=6.0.3.19\texpected=6.0.3.18"));
+    assert!(stdout.contains("failure_stage=sciter_version_call"));
+    assert!(!stdout.contains("api_gate="));
+    assert!(!stdout.contains("abi_gate="));
+    assert_eq!(
+        stderr,
+        "api-abi child failed: stage=sciter_version_call diagnostic=actual engine version 6.0.3.19 did not match expected 6.0.3.18\n"
+    );
+}
+
+#[test]
+fn successful_probe_then_abnormal_exit_keeps_last_stage_without_gate_pass() {
+    let (_directory, binary) = compile_api_abi_fixture("api-abi-abnormal-after-probe");
+
+    for mode in ["success-nonzero", "success-abort"] {
+        let output = Command::new(&binary).arg(mode).output().unwrap();
+        if mode == "success-nonzero" {
+            assert_eq!(output.status.code(), Some(23));
+        } else {
+            assert_eq!(output.status.signal(), Some(6));
+        }
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let protocol = parse_child_protocol(stdout.as_bytes()).unwrap();
+        let last_progress = protocol
+            .iter()
+            .rev()
+            .find(|line| line.record == "progress")
+            .unwrap();
+        assert_eq!(last_progress.fields["stage"], "sciter_version_call");
+        assert_eq!(last_progress.fields["state"], "completed");
+        assert!(protocol.iter().any(|line| line
+            .fields
+            .get("status")
+            .is_some_and(|value| value == "success_candidate")));
+        assert!(!stdout.contains("api_gate="));
+        assert!(!stdout.contains("abi_gate="));
+        assert!(!stdout.contains("gate=pass"));
+    }
 }
 
 #[derive(Default)]
@@ -690,6 +1095,7 @@ fn pinned_sciter_runtime_abi_smoke() {
     let sciter_path = toolkit_dir().join("sciter.rs");
     let artifact_manifest_path = repository_root
         .join(".kiro/specs/macos-sciter-runtime-evidence/evidence/artifact-manifest.txt");
+    let harness_path = toolkit_dir().join("harness.rs");
     let source = format!(
         r#"
 #[path = {model_path:?}]
@@ -698,47 +1104,29 @@ mod model;
 mod manifest;
 #[path = {sciter_path:?}]
 mod sciter;
+#[path = {harness_path:?}]
+mod harness;
 
 fn main() {{
     let manifest_text = std::fs::read_to_string({artifact_manifest_path:?}).unwrap();
     let manifest = manifest::parse_artifact_manifest(&manifest_text).unwrap();
     let runtime = std::path::Path::new({runtime:?}).canonicalize().unwrap();
-    let loaded = unsafe {{ sciter::SciterRuntime::load_absolute(&runtime, &runtime) }}.unwrap();
-    let result = loaded.abi_smoke(&manifest).unwrap();
-    assert_eq!(result.actual_api_version(), 10);
-    assert_eq!(result.expected_api_version(), 10);
-    assert_eq!(result.actual_engine_version(), [6, 0, 3, 18]);
-    assert_eq!(result.expected_engine_version(), [6, 0, 3, 18]);
-    assert!(result.api_matches());
-    assert!(result.engine_matches());
-    assert!(result.version_call_returned());
-    assert_eq!(result.process_architecture(), "arm64");
-    assert_eq!(result.thread_context(), sciter::ThreadContext::Main);
-    assert_eq!(result.validated_fields(), &[sciter::AbiField::ApiVersion, sciter::AbiField::SciterVersion]);
-    assert!(!result.validates_lifecycle_api());
+    harness::run_child(harness::ChildMode::ApiAbi, &runtime, &manifest).unwrap();
 }}
 "#,
     );
     fs::write(&helper_source, source).unwrap();
 
-    let mut compiler = if let Some(rustc) = std::env::var_os("RUSTC") {
-        Command::new(rustc)
-    } else {
-        let mut command = Command::new("mise");
-        command.args(["exec", "rust@stable", "--", "rustc"]);
-        command
-    };
-    let compilation = compiler
-        .args(["--edition=2021"])
-        .arg(&helper_source)
-        .arg("-o")
+    compile_rust_source(&helper_source, &helper_binary);
+    let architectures = Command::new("/usr/bin/lipo")
+        .args(["-archs"])
         .arg(&helper_binary)
         .output()
         .unwrap();
-    assert!(
-        compilation.status.success(),
-        "helper compilation failed: {}",
-        String::from_utf8_lossy(&compilation.stderr)
+    assert!(architectures.status.success());
+    assert_eq!(
+        String::from_utf8(architectures.stdout).unwrap().trim(),
+        "arm64"
     );
 
     let smoke = Command::new(helper_binary).output().unwrap();
@@ -748,6 +1136,29 @@ fn main() {{
         String::from_utf8_lossy(&smoke.stdout),
         String::from_utf8_lossy(&smoke.stderr)
     );
+    assert!(smoke.stderr.is_empty());
+    let protocol = parse_child_protocol(&smoke.stdout).unwrap();
+    let api = protocol.iter().find(|line| {
+        line.record == "progress"
+            && line.fields["stage"] == "api_version"
+            && line.fields["state"] == "completed"
+    });
+    assert_eq!(api.unwrap().fields["actual"], "10");
+    let engine = protocol.iter().find(|line| {
+        line.record == "progress"
+            && line.fields["stage"] == "sciter_version_call"
+            && line.fields["state"] == "completed"
+    });
+    assert_eq!(engine.unwrap().fields["actual"], "6.0.3.18");
+    let result = protocol.last().unwrap();
+    assert_eq!(result.fields["status"], "success_candidate");
+    assert_eq!(result.fields["scope"], "api_version+SciterVersion");
+    assert_eq!(result.fields["lifecycle_abi_validated"], "false");
+    assert_eq!(result.fields["process_architecture"], "arm64");
+    assert_eq!(result.fields["thread_context"], "main");
+    assert!(!String::from_utf8(smoke.stdout)
+        .unwrap()
+        .contains("gate=pass"));
 }
 
 struct TestDirectory {

@@ -24,6 +24,24 @@ pub(crate) const RTLD_NOW: c_int = 0x2;
 pub(crate) const RTLD_LOCAL: c_int = 0x4;
 const SCITER_API_SYMBOL: &[u8] = b"SciterAPI\0";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeLoadProgress {
+    RuntimeLoadEntered,
+    RuntimeLoadCompleted,
+    SciterApiExportEntered,
+    SciterApiExportCompleted,
+    ApiTableEntered,
+    ApiTableCompleted,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AbiSmokeProgress {
+    ApiVersionEntered,
+    ApiVersionCompleted(u32),
+    SciterVersionCallEntered,
+    SciterVersionCallCompleted([u32; 4]),
+}
+
 type SciterApiExport = unsafe extern "C" fn() -> *const bindings::ISciterAPI;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -660,10 +678,21 @@ impl SciterRuntime {
         manifest_canonical_path: &Path,
     ) -> Result<Self, RuntimeLoadError> {
         unsafe {
-            Self::load_with(
+            Self::load_absolute_with_progress(runtime_path, manifest_canonical_path, &mut |_| {})
+        }
+    }
+
+    pub(crate) unsafe fn load_absolute_with_progress(
+        runtime_path: &Path,
+        manifest_canonical_path: &Path,
+        progress: &mut impl FnMut(RuntimeLoadProgress),
+    ) -> Result<Self, RuntimeLoadError> {
+        unsafe {
+            Self::load_with_progress(
                 runtime_path,
                 manifest_canonical_path,
                 &LibSystemDynamicLoader,
+                progress,
             )
         }
     }
@@ -720,7 +749,15 @@ impl SciterRuntime {
         &self,
         manifest: &ArtifactManifest,
     ) -> Result<AbiSmokeResult, RuntimeAbiError> {
-        self.abi_smoke_checked(manifest, is_process_main_thread)
+        self.abi_smoke_with_progress(manifest, &mut |_| {})
+    }
+
+    pub(crate) fn abi_smoke_with_progress(
+        &self,
+        manifest: &ArtifactManifest,
+        progress: &mut impl FnMut(AbiSmokeProgress),
+    ) -> Result<AbiSmokeResult, RuntimeAbiError> {
+        self.abi_smoke_checked(manifest, is_process_main_thread, progress)
     }
 
     #[cfg(test)]
@@ -729,13 +766,14 @@ impl SciterRuntime {
         manifest: &ArtifactManifest,
         is_main_thread: impl FnOnce() -> bool,
     ) -> Result<AbiSmokeResult, RuntimeAbiError> {
-        self.abi_smoke_checked(manifest, is_main_thread)
+        self.abi_smoke_checked(manifest, is_main_thread, &mut |_| {})
     }
 
     fn abi_smoke_checked(
         &self,
         manifest: &ArtifactManifest,
         is_main_thread: impl FnOnce() -> bool,
+        progress: &mut impl FnMut(AbiSmokeProgress),
     ) -> Result<AbiSmokeResult, RuntimeAbiError> {
         if !is_main_thread() {
             return Err(RuntimeAbiError::NotMainThread);
@@ -743,9 +781,12 @@ impl SciterRuntime {
 
         // The committed generated type is authoritative for both offsets. No other table entry is
         // read here, and the function slot is checked before the four documented selector calls.
+        progress(AbiSmokeProgress::ApiVersionEntered);
         let api = unsafe { self.api.as_ref() };
         let actual_api_version = api.version;
-        let sciter_version = api
+        progress(AbiSmokeProgress::ApiVersionCompleted(actual_api_version));
+        progress(AbiSmokeProgress::SciterVersionCallEntered);
+        let sciter_version = unsafe { self.api.as_ref() }
             .SciterVersion
             .ok_or(RuntimeAbiError::NullSciterVersion)?;
         let actual_engine_version = [
@@ -754,6 +795,9 @@ impl SciterRuntime {
             unsafe { sciter_version(2) },
             unsafe { sciter_version(3) },
         ];
+        progress(AbiSmokeProgress::SciterVersionCallCompleted(
+            actual_engine_version,
+        ));
 
         Ok(AbiSmokeResult {
             actual_api_version,
@@ -780,6 +824,17 @@ impl SciterRuntime {
         manifest_canonical_path: &Path,
         loader: &L,
     ) -> Result<Self, RuntimeLoadError> {
+        unsafe {
+            Self::load_with_progress(runtime_path, manifest_canonical_path, loader, &mut |_| {})
+        }
+    }
+
+    pub(crate) unsafe fn load_with_progress<L: DynamicLoader>(
+        runtime_path: &Path,
+        manifest_canonical_path: &Path,
+        loader: &L,
+        progress: &mut impl FnMut(RuntimeLoadProgress),
+    ) -> Result<Self, RuntimeLoadError> {
         validate_canonical_absolute(runtime_path, "runtime")?;
         validate_canonical_absolute(manifest_canonical_path, "manifest")?;
         if runtime_path != manifest_canonical_path {
@@ -795,14 +850,17 @@ impl SciterRuntime {
                 path: runtime_path.to_path_buf(),
             }
         })?;
+        progress(RuntimeLoadProgress::RuntimeLoadEntered);
         let raw_library = unsafe { loader.open(c_path.as_ptr(), RTLD_NOW | RTLD_LOCAL) };
         let library = NonNull::new(raw_library).ok_or_else(|| RuntimeLoadError::LoadFailure {
             path: runtime_path.to_path_buf(),
             diagnostic: unsafe { copied_dlerror(loader, "dlopen failed without dlerror") },
         })?;
+        progress(RuntimeLoadProgress::RuntimeLoadCompleted);
 
         // POSIX requires clearing stale dlerror state before dlsym and checking it afterwards.
         unsafe { loader.error() };
+        progress(RuntimeLoadProgress::SciterApiExportEntered);
         let symbol = unsafe {
             loader.symbol(
                 library.as_ptr(),
@@ -823,12 +881,15 @@ impl SciterRuntime {
                 diagnostic,
             });
         }
+        progress(RuntimeLoadProgress::SciterApiExportCompleted);
 
         // This is the single unsafe conversion from an untyped dlsym address to the committed
         // Sciter export ABI. The exact signature matches the existing generated-table FFI.
         let sciter_api: SciterApiExport = unsafe { std::mem::transmute(symbol) };
+        progress(RuntimeLoadProgress::ApiTableEntered);
         let api = NonNull::new(unsafe { sciter_api() } as *mut bindings::ISciterAPI)
             .ok_or(RuntimeLoadError::NullApiTable)?;
+        progress(RuntimeLoadProgress::ApiTableCompleted);
 
         Ok(Self {
             library,
@@ -838,7 +899,7 @@ impl SciterRuntime {
     }
 }
 
-fn is_process_main_thread() -> bool {
+pub(crate) fn is_process_main_thread() -> bool {
     unsafe { pthread_main_np() == 1 }
 }
 
