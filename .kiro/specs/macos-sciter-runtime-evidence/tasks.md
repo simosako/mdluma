@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Standalone evidence toolkitの基盤を構築する
-- [ ] 1.1 native arm64向けbuild entryとtest entryを実装する（1-3時間）
+- [x] 1.1 native arm64向けbuild entryとtest entryを実装する（1-3時間）
   - `run`と`test`の実行modeを受け付け、repository rootから直接native `rustc`を呼び出す。
   - native host architectureとRust compilation prerequisitesだけをbinary実行前に確認し、不足時は製品buildへfallbackせず診断付きで停止する。
   - metadata commandの欠落はBuildEntryで即時停止せず、ArtifactProbeとEvidenceRunnerがenvironment failureとして検出し、unsafe childを起動しないNo-Go evidenceへcommitできるようにする。
@@ -293,3 +293,7 @@
   - _Requirements: 5.10, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.11_
   - _Boundary: BuildEntry, EvidenceStore, DecisionEvaluator, EvidenceRunner_
   - _Depends: 9.1_
+
+## Implementation Notes
+
+- Task 1.1: Rust stableは`mise`管理下にあり、task-local verificationは`mise exec rust@stable -- ...`で実行する。
