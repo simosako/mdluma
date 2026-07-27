@@ -1,0 +1,22 @@
+{
+  "feature_name": "macos-sciter-runtime-evidence",
+  "created_at": "2026-07-26T13:42:17Z",
+  "updated_at": "2026-07-26T23:35:50Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}
