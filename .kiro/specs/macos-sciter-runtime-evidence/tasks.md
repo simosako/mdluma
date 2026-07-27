@@ -99,7 +99,7 @@
   - _Depends: 2.2, 3.1, 3.2_
 
 - [ ] 4. Popupとwindow lifecycle fixtureを実装する
-- [ ] 4.1 (P) Sciter固有のpopup fixtureとevent state machineを実装する（1-3時間）
+- [x] 4.1 (P) Sciter固有のpopup fixtureとevent state machineを実装する（1-3時間）
   - 実`menu`要素とanchorを持ち、現行MDLumaと同じ`anchor.popup(menu, ...)`形状だけを使用する。
   - `PopupWindow.isValid == true`の確認後だけshown eventを発行する。
   - 次の`Element.post()` iterationでcloseし、official close callback後の次iterationでinvalidを確認してclosed eventを発行する。
@@ -307,3 +307,4 @@
 - Task 3.2: committed bindingsのABI claimはAPI `version` fieldと`SciterVersion` entryだけに限定し、selector順序`0,1,2,3`を固定する。
 - Task 3.3: registered callback contextは`Pin<Box<_>>`で固定し、destroy callback復帰後までownerが解放しない。
 - Task 3.4: childはunsafe operation直前のstageをflushし、exit未観測時はgate Passではなく`success_candidate`だけを出力する。
+- Task 4.1: Nodeはpure reducerだけを検証し、Sciter API shapeはasset contractに限定する。実runtime lifecycleはTask 4.2で検証する。

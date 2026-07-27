@@ -1,0 +1,71 @@
+<html>
+  <head>
+    <style>
+      menu { width: max-content; }
+    </style>
+    <script src="popup-state.js"></script>
+  </head>
+  <body>
+    <button #anchor>Popup cycle anchor</button>
+    <menu #popup-menu>
+      <li>Runtime evidence popup</li>
+    </menu>
+    <script>
+      var anchor = document.$("#anchor");
+      var menu = document.$("#popup-menu");
+      var reducer = PopupCycleReducer;
+      var state = reducer.initialState();
+
+      function escapeProtocolValue(value) {
+        return String(value)
+          .replace(/%/g, "%25")
+          .replace(/\t/g, "%09")
+          .replace(/\n/g, "%0A")
+          .replace(/\r/g, "%0D")
+          .replace(/=/g, "%3D");
+      }
+
+      function emit(event) {
+        console.log([
+          "MDLUMA_EVIDENCE",
+          "1",
+          "popup",
+          escapeProtocolValue(event.cycle),
+          escapeProtocolValue(event.phase),
+        ].join("\t"));
+      }
+
+      function advance(input) {
+        var result = reducer.transition(state, input);
+        state = result.state;
+        emit(result.event);
+        return result;
+      }
+
+      function beginCycle() {
+        advance("begin");
+        var popup = anchor.popup(menu,{anchorAt:1,popupAt:7});
+        popup.on("close", function onPopupClose() {
+          anchor.post(function confirmClosed() {
+            if (popup.isValid === false) {
+              var result = advance("closed");
+              if (result.action === "close-controller") {
+                Window.this.close();
+              } else {
+                anchor.post(beginCycle);
+              }
+            }
+          });
+        });
+        if (popup.isValid === true) {
+          advance("shown");
+          anchor.post(function closePopup() {
+            popup.close();
+          });
+        }
+      }
+
+      anchor.post(beginCycle);
+    </script>
+  </body>
+</html>

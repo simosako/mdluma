@@ -1065,6 +1065,81 @@ fn lifecycle_helpers_use_official_commands_and_keep_debug_context_stable_through
 }
 
 #[test]
+fn popup_fixture_has_a_deterministic_100_cycle_asset_contract() {
+    let fixture_dir = toolkit_dir().join("fixtures");
+    let html = fs::read_to_string(fixture_dir.join("popup.htm")).unwrap();
+    let state_machine = fs::read_to_string(fixture_dir.join("popup-state.js")).unwrap();
+
+    for required in [
+        "<button #anchor",
+        "<menu #popup-menu",
+        "anchor.popup(menu,{anchorAt:1,popupAt:7})",
+        "popup.isValid === true",
+        "popup.on(\"close\"",
+        "anchor.post(function closePopup()",
+        "popup.close()",
+        "anchor.post(function confirmClosed()",
+        "popup.isValid === false",
+        "Window.this.close()",
+    ] {
+        assert!(
+            html.contains(required),
+            "missing popup contract: {required}"
+        );
+    }
+    for forbidden in [
+        "setTimeout",
+        "setInterval",
+        "deadline",
+        "gate=",
+        "decision=",
+        "SCITER_APP_",
+        "SC_ENGINE_",
+    ] {
+        assert!(
+            !html.contains(forbidden) && !state_machine.contains(forbidden),
+            "fixture owns forbidden responsibility: {forbidden}"
+        );
+    }
+
+    let node_program = r#"
+const reducer = require(process.argv[1]);
+let state = reducer.initialState();
+const events = [];
+for (;;) {
+  let transition = reducer.transition(state, "begin");
+  state = transition.state;
+  events.push(transition.event);
+  transition = reducer.transition(state, "shown");
+  state = transition.state;
+  events.push(transition.event);
+  transition = reducer.transition(state, "closed");
+  state = transition.state;
+  events.push(transition.event);
+  if (transition.action === "close-controller") break;
+}
+if (events.length !== 300 || state.cycle !== 100 || state.phase !== "complete") process.exit(1);
+for (let cycle = 1; cycle <= 100; cycle += 1) {
+  const offset = (cycle - 1) * 3;
+  const expected = ["started", "shown", "closed"];
+  for (let phase = 0; phase < 3; phase += 1) {
+    if (events[offset + phase].cycle !== cycle || events[offset + phase].phase !== expected[phase]) process.exit(2);
+  }
+}
+"#;
+    let output = Command::new("node")
+        .args(["-e", node_program])
+        .arg(fixture_dir.join("popup-state.js"))
+        .output()
+        .expect("Node is required to execute the pure popup transition reducer");
+    assert!(
+        output.status.success(),
+        "pure popup reducer contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 #[ignore = "requires the pinned Sciter dylib on a native arm64 macOS host"]
 fn pinned_sciter_runtime_abi_smoke() {
     let repository_root = toolkit_dir().join("../..").canonicalize().unwrap();
