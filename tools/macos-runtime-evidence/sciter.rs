@@ -208,6 +208,7 @@ pub(crate) enum AppCommand {
 pub(crate) struct WindowFlags(u32);
 
 impl WindowFlags {
+    pub(crate) const TRANSIENT: Self = Self(0);
     pub(crate) const MAIN: Self = Self(1 << 7);
 }
 

@@ -10,7 +10,7 @@ use crate::model::ArtifactManifest;
 use crate::sciter::{
     AbiSmokeProgress, DebugCallbackContext, HostCallbackContext, LifecycleApi,
     RegisteredDebugContext, RegisteredHostContext, RuntimeAbiError, RuntimeLoadError,
-    RuntimeLoadProgress, SciterRuntime, ShutdownComplete, WindowFlags, WindowHandle,
+    RuntimeLoadProgress, SciterRuntime, ShutdownComplete, WindowFlags, WindowHandle, WindowState,
 };
 
 const PROTOCOL_PREFIX: &str = "MDLUMA_EVIDENCE";
@@ -21,12 +21,14 @@ pub(crate) const LIMITED_ABI_SCOPE: &str = "api_version+SciterVersion";
 pub(crate) enum ChildMode {
     ApiAbi,
     PopupCycles,
+    WindowCycles,
 }
 
 #[derive(Debug)]
 pub(crate) enum ChildFailure {
     ApiAbi(ApiAbiFailure),
     Popup(PopupFailure),
+    Window(WindowFailure),
 }
 
 impl fmt::Display for ChildFailure {
@@ -34,6 +36,7 @@ impl fmt::Display for ChildFailure {
         match self {
             Self::ApiAbi(error) => error.fmt(formatter),
             Self::Popup(error) => error.fmt(formatter),
+            Self::Window(error) => error.fmt(formatter),
         }
     }
 }
@@ -173,7 +176,351 @@ pub(crate) fn run_child(
         ChildMode::PopupCycles => {
             run_popup_child(runtime_path, fixture_path).map_err(ChildFailure::Popup)
         }
+        ChildMode::WindowCycles => run_window_child(runtime_path).map_err(ChildFailure::Window),
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum WindowFailure {
+    Lifecycle(String),
+    Protocol(String),
+    PrimaryAndShutdown {
+        primary: Box<WindowFailure>,
+        shutdown: Box<WindowFailure>,
+    },
+}
+
+impl fmt::Display for WindowFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Lifecycle(diagnostic) => write!(formatter, "window lifecycle: {diagnostic}"),
+            Self::Protocol(diagnostic) => write!(formatter, "window protocol: {diagnostic}"),
+            Self::PrimaryAndShutdown { primary, shutdown } => {
+                write!(
+                    formatter,
+                    "{primary}; shutdown cleanup also failed: {shutdown}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for WindowFailure {}
+
+#[derive(Default)]
+pub(crate) struct WindowProtocolValidator {
+    next_cycle: u16,
+    next_phase: u8,
+    failure: Option<String>,
+}
+
+impl WindowProtocolValidator {
+    pub(crate) fn accept(&mut self, cycle: u16, phase: &str) -> Result<(), String> {
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        if !(1..=100).contains(&cycle) {
+            return Err(self.reject("window cycle must be 1..100"));
+        }
+        let expected_cycle = if self.next_cycle == 0 {
+            1
+        } else {
+            self.next_cycle
+        };
+        let expected_phase = ["started", "created", "destroyed"][self.next_phase as usize];
+        if cycle != expected_cycle || phase != expected_phase {
+            return Err(self.reject(format!(
+                "expected window cycle {expected_cycle} phase {expected_phase}, got cycle {cycle} phase {phase}"
+            )));
+        }
+        if self.next_phase == 2 {
+            self.next_phase = 0;
+            self.next_cycle = cycle + 1;
+        } else {
+            self.next_phase += 1;
+            self.next_cycle = cycle;
+        }
+        Ok(())
+    }
+
+    fn reject(&mut self, diagnostic: impl Into<String>) -> String {
+        let diagnostic = diagnostic.into();
+        if self.failure.is_none() {
+            self.failure = Some(diagnostic.clone());
+        }
+        diagnostic
+    }
+
+    pub(crate) fn complete(&self) -> bool {
+        self.failure.is_none() && self.next_cycle == 101 && self.next_phase == 0
+    }
+}
+
+pub(crate) trait WindowLifecycleApi {
+    type Error: fmt::Display;
+
+    fn init(&mut self) -> Result<(), Self::Error>;
+    fn create_controller(&mut self) -> Result<(), Self::Error>;
+    fn register_controller_callback(&mut self) -> Result<(), Self::Error>;
+    fn emit(&mut self, cycle: u16, phase: &'static str) -> Result<(), Self::Error>;
+    fn create_transient(&mut self, cycle: u16) -> Result<(), Self::Error>;
+    fn register_transient_callback(&mut self) -> Result<(), Self::Error>;
+    fn show_transient(&mut self) -> Result<(), Self::Error>;
+    fn transient_is_shown(&mut self) -> Result<bool, Self::Error>;
+    fn close_transient(&mut self) -> Result<(), Self::Error>;
+    fn loop_iteration(&mut self) -> Result<bool, Self::Error>;
+    fn transient_destroyed(&self) -> Result<bool, Self::Error>;
+    fn release_transient_context(&mut self);
+    fn close_controller(&mut self) -> Result<(), Self::Error>;
+    fn controller_destroyed(&self) -> Result<bool, Self::Error>;
+    fn release_controller_context(&mut self);
+    fn stop(&mut self) -> Result<(), Self::Error>;
+    fn shutdown(&mut self) -> Result<(), Self::Error>;
+}
+
+pub(crate) fn run_window_cycles_with<A: WindowLifecycleApi>(
+    api: &mut A,
+) -> Result<(), WindowFailure> {
+    fn lifecycle(error: impl fmt::Display) -> WindowFailure {
+        WindowFailure::Lifecycle(error.to_string())
+    }
+
+    api.init().map_err(lifecycle)?;
+    let result = (|| {
+        api.create_controller().map_err(lifecycle)?;
+        api.register_controller_callback().map_err(lifecycle)?;
+
+        for cycle in 1..=100 {
+            api.emit(cycle, "started").map_err(lifecycle)?;
+            api.create_transient(cycle).map_err(lifecycle)?;
+            api.register_transient_callback().map_err(lifecycle)?;
+            api.show_transient().map_err(lifecycle)?;
+            if !api.transient_is_shown().map_err(lifecycle)? {
+                return Err(WindowFailure::Lifecycle(format!(
+                    "transient window {cycle} did not reach shown state"
+                )));
+            }
+            api.emit(cycle, "created").map_err(lifecycle)?;
+            api.close_transient().map_err(lifecycle)?;
+
+            loop {
+                let continued = api.loop_iteration().map_err(lifecycle)?;
+                if api.transient_destroyed().map_err(lifecycle)? {
+                    break;
+                }
+                if !continued {
+                    return Err(WindowFailure::Lifecycle(format!(
+                        "event loop stopped before transient window {cycle} destruction"
+                    )));
+                }
+            }
+            api.release_transient_context();
+            api.emit(cycle, "destroyed").map_err(lifecycle)?;
+        }
+
+        api.close_controller().map_err(lifecycle)?;
+        let continued_after_destroy = loop {
+            let continued = api.loop_iteration().map_err(lifecycle)?;
+            if api.controller_destroyed().map_err(lifecycle)? {
+                break continued;
+            }
+            if !continued {
+                return Err(WindowFailure::Lifecycle(
+                    "event loop stopped before controller destruction".to_owned(),
+                ));
+            }
+        };
+        api.release_controller_context();
+
+        if continued_after_destroy {
+            api.stop().map_err(lifecycle)?;
+            if api.loop_iteration().map_err(lifecycle)? {
+                return Err(WindowFailure::Lifecycle(
+                    "event loop continued after the single STOP command".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    })();
+
+    let shutdown = api.shutdown().map_err(lifecycle);
+    match (result, shutdown) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(primary), Ok(())) => Err(primary),
+        (Ok(()), Err(shutdown)) => Err(shutdown),
+        (Err(primary), Err(shutdown)) => Err(WindowFailure::PrimaryAndShutdown {
+            primary: Box::new(primary),
+            shutdown: Box::new(shutdown),
+        }),
+    }
+}
+
+struct SciterWindowApi<'a> {
+    api: LifecycleApi,
+    controller: Option<WindowHandle>,
+    controller_host: Option<RegisteredHostContext>,
+    transient: Option<WindowHandle>,
+    transient_host: Option<RegisteredHostContext>,
+    protocol: WindowProtocolValidator,
+    shutdown: Option<ShutdownComplete>,
+    _runtime: &'a SciterRuntime,
+}
+
+impl<'a> SciterWindowApi<'a> {
+    fn new(runtime: &'a SciterRuntime) -> Result<Self, WindowFailure> {
+        Ok(Self {
+            api: runtime
+                .lifecycle_api()
+                .map_err(|error| WindowFailure::Lifecycle(error.to_string()))?,
+            controller: None,
+            controller_host: None,
+            transient: None,
+            transient_host: None,
+            protocol: WindowProtocolValidator::default(),
+            shutdown: None,
+            _runtime: runtime,
+        })
+    }
+
+    fn lifecycle<T>(result: Result<T, impl fmt::Display>) -> Result<T, WindowFailure> {
+        result.map_err(|error| WindowFailure::Lifecycle(error.to_string()))
+    }
+}
+
+impl WindowLifecycleApi for SciterWindowApi<'_> {
+    type Error = WindowFailure;
+
+    fn init(&mut self) -> Result<(), Self::Error> {
+        Self::lifecycle(self.api.init())
+    }
+
+    fn create_controller(&mut self) -> Result<(), Self::Error> {
+        self.controller = Some(Self::lifecycle(self.api.create_window(
+            WindowFlags::MAIN,
+            None,
+            None,
+        ))?);
+        Ok(())
+    }
+
+    fn register_controller_callback(&mut self) -> Result<(), Self::Error> {
+        self.controller_host = Some(Self::lifecycle(
+            self.api
+                .register_host_callback(self.controller.unwrap(), HostCallbackContext::new()),
+        )?);
+        Ok(())
+    }
+
+    fn emit(&mut self, cycle: u16, phase: &'static str) -> Result<(), Self::Error> {
+        self.protocol
+            .accept(cycle, phase)
+            .map_err(WindowFailure::Protocol)?;
+        let mut stdout = io::stdout().lock();
+        writeln!(
+            stdout,
+            "{PROTOCOL_PREFIX}\t{PROTOCOL_VERSION}\twindow\t{cycle}\t{phase}"
+        )
+        .map_err(|error| WindowFailure::Lifecycle(error.to_string()))?;
+        stdout
+            .flush()
+            .map_err(|error| WindowFailure::Lifecycle(error.to_string()))
+    }
+
+    fn create_transient(&mut self, _cycle: u16) -> Result<(), Self::Error> {
+        self.transient = Some(Self::lifecycle(self.api.create_window(
+            WindowFlags::TRANSIENT,
+            None,
+            self.controller,
+        ))?);
+        Ok(())
+    }
+
+    fn register_transient_callback(&mut self) -> Result<(), Self::Error> {
+        self.transient_host = Some(Self::lifecycle(
+            self.api
+                .register_host_callback(self.transient.unwrap(), HostCallbackContext::new()),
+        )?);
+        Ok(())
+    }
+
+    fn show_transient(&mut self) -> Result<(), Self::Error> {
+        Self::lifecycle(self.api.set_window_state(
+            self.transient.unwrap(),
+            WindowState::Shown,
+            true,
+        ))?;
+        Ok(())
+    }
+
+    fn transient_is_shown(&mut self) -> Result<bool, Self::Error> {
+        Ok(Self::lifecycle(self.api.window_state(self.transient.unwrap()))? == WindowState::Shown)
+    }
+
+    fn close_transient(&mut self) -> Result<(), Self::Error> {
+        Self::lifecycle(self.api.set_window_state(
+            self.transient.unwrap(),
+            WindowState::Closed,
+            true,
+        ))?;
+        Ok(())
+    }
+
+    fn loop_iteration(&mut self) -> Result<bool, Self::Error> {
+        Self::lifecycle(self.api.loop_iteration())
+    }
+
+    fn transient_destroyed(&self) -> Result<bool, Self::Error> {
+        Self::lifecycle(
+            self.transient_host
+                .as_ref()
+                .ok_or_else(|| WindowFailure::Lifecycle("transient callback missing".to_owned()))?
+                .destroyed(),
+        )
+    }
+
+    fn release_transient_context(&mut self) {
+        drop(self.transient_host.take());
+        self.transient = None;
+    }
+
+    fn close_controller(&mut self) -> Result<(), Self::Error> {
+        Self::lifecycle(self.api.set_window_state(
+            self.controller.unwrap(),
+            WindowState::Closed,
+            true,
+        ))?;
+        Ok(())
+    }
+
+    fn controller_destroyed(&self) -> Result<bool, Self::Error> {
+        Self::lifecycle(
+            self.controller_host
+                .as_ref()
+                .ok_or_else(|| WindowFailure::Lifecycle("controller callback missing".to_owned()))?
+                .destroyed(),
+        )
+    }
+
+    fn release_controller_context(&mut self) {
+        drop(self.controller_host.take());
+        self.controller = None;
+    }
+
+    fn stop(&mut self) -> Result<(), Self::Error> {
+        Self::lifecycle(self.api.stop())
+    }
+
+    fn shutdown(&mut self) -> Result<(), Self::Error> {
+        self.shutdown = Some(Self::lifecycle(self.api.shutdown())?);
+        Ok(())
+    }
+}
+
+pub(crate) fn run_window_child(runtime_path: &Path) -> Result<(), WindowFailure> {
+    let runtime = unsafe { SciterRuntime::load_absolute(runtime_path, runtime_path) }
+        .map_err(|error| WindowFailure::Lifecycle(error.to_string()))?;
+    let mut api = SciterWindowApi::new(&runtime)?;
+    run_window_cycles_with(&mut api)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1168,5 +1515,260 @@ mod popup_tests {
 
         assert!(diagnostic.contains("expected popup cycle 1 phase shown"));
         assert!(diagnostic.contains("SHUTDOWN failed main-thread check"));
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::{
+        run_window_cycles_with, WindowFailure, WindowLifecycleApi, WindowProtocolValidator,
+    };
+
+    #[derive(Default)]
+    struct SyntheticWindowApi {
+        calls: Vec<String>,
+        events: Vec<String>,
+        cycle: u16,
+        transient_destroyed: bool,
+        controller_destroyed: bool,
+        callback_returned: bool,
+        transient_destroy_never: bool,
+        loop_continues_after_controller_destroy: bool,
+        shown: bool,
+        stop_rejected: bool,
+        shutdown_rejected: bool,
+    }
+
+    impl SyntheticWindowApi {
+        fn success() -> Self {
+            Self {
+                shown: true,
+                ..Self::default()
+            }
+        }
+    }
+
+    impl WindowLifecycleApi for SyntheticWindowApi {
+        type Error = &'static str;
+
+        fn init(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("init".to_owned());
+            Ok(())
+        }
+
+        fn create_controller(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("create_controller".to_owned());
+            Ok(())
+        }
+
+        fn register_controller_callback(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("callback_controller".to_owned());
+            Ok(())
+        }
+
+        fn emit(&mut self, cycle: u16, phase: &'static str) -> Result<(), Self::Error> {
+            self.calls.push(format!("emit_{cycle}_{phase}"));
+            self.events
+                .push(format!("MDLUMA_EVIDENCE\t1\twindow\t{cycle}\t{phase}"));
+            Ok(())
+        }
+
+        fn create_transient(&mut self, cycle: u16) -> Result<(), Self::Error> {
+            assert!(self.cycle == 0 || cycle == self.cycle + 1);
+            self.cycle = cycle;
+            self.transient_destroyed = false;
+            self.callback_returned = false;
+            self.calls.push(format!("create_transient_{cycle}"));
+            Ok(())
+        }
+
+        fn register_transient_callback(&mut self) -> Result<(), Self::Error> {
+            self.calls
+                .push(format!("callback_transient_{}", self.cycle));
+            Ok(())
+        }
+
+        fn show_transient(&mut self) -> Result<(), Self::Error> {
+            self.calls.push(format!("show_{}", self.cycle));
+            Ok(())
+        }
+
+        fn transient_is_shown(&mut self) -> Result<bool, Self::Error> {
+            self.calls.push(format!("shown_check_{}", self.cycle));
+            Ok(self.shown)
+        }
+
+        fn close_transient(&mut self) -> Result<(), Self::Error> {
+            self.calls.push(format!("close_{}", self.cycle));
+            Ok(())
+        }
+
+        fn loop_iteration(&mut self) -> Result<bool, Self::Error> {
+            self.calls.push("iteration".to_owned());
+            if self.transient_destroy_never {
+                return Ok(false);
+            }
+            if self.cycle < 100 || !self.transient_destroyed {
+                self.transient_destroyed = true;
+                self.callback_returned = true;
+                return Ok(true);
+            }
+            self.controller_destroyed = true;
+            Ok(self.loop_continues_after_controller_destroy)
+        }
+
+        fn transient_destroyed(&self) -> Result<bool, Self::Error> {
+            Ok(self.transient_destroyed)
+        }
+
+        fn release_transient_context(&mut self) {
+            assert!(
+                self.callback_returned,
+                "context freed before callback returned"
+            );
+            self.calls.push(format!("release_transient_{}", self.cycle));
+        }
+
+        fn close_controller(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("close_controller".to_owned());
+            Ok(())
+        }
+
+        fn controller_destroyed(&self) -> Result<bool, Self::Error> {
+            Ok(self.controller_destroyed)
+        }
+
+        fn release_controller_context(&mut self) {
+            self.calls.push("release_controller".to_owned());
+        }
+
+        fn stop(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("stop".to_owned());
+            if self.stop_rejected {
+                Err("STOP rejected")
+            } else {
+                self.loop_continues_after_controller_destroy = false;
+                Ok(())
+            }
+        }
+
+        fn shutdown(&mut self) -> Result<(), Self::Error> {
+            self.calls.push("shutdown".to_owned());
+            if self.shutdown_rejected {
+                Err("SHUTDOWN rejected")
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn window_cycles_prove_exact_order_shown_check_and_callback_return_before_free() {
+        let mut api = SyntheticWindowApi::success();
+        api.loop_continues_after_controller_destroy = true;
+
+        run_window_cycles_with(&mut api).unwrap();
+
+        assert_eq!(
+            &api.calls[..3],
+            ["init", "create_controller", "callback_controller"]
+        );
+        assert_eq!(api.events.len(), 300);
+        for cycle in 1..=100 {
+            let event_offset = (cycle as usize - 1) * 3;
+            assert_eq!(
+                &api.events[event_offset..event_offset + 3],
+                [
+                    format!("MDLUMA_EVIDENCE\t1\twindow\t{cycle}\tstarted"),
+                    format!("MDLUMA_EVIDENCE\t1\twindow\t{cycle}\tcreated"),
+                    format!("MDLUMA_EVIDENCE\t1\twindow\t{cycle}\tdestroyed"),
+                ]
+            );
+            let shown = api
+                .calls
+                .iter()
+                .position(|call| call == &format!("shown_check_{cycle}"))
+                .unwrap();
+            let created = api
+                .calls
+                .iter()
+                .position(|call| call == &format!("emit_{cycle}_created"))
+                .unwrap();
+            let released = api
+                .calls
+                .iter()
+                .position(|call| call == &format!("release_transient_{cycle}"))
+                .unwrap();
+            let destroyed = api
+                .calls
+                .iter()
+                .position(|call| call == &format!("emit_{cycle}_destroyed"))
+                .unwrap();
+            assert!(shown < created && released < destroyed);
+        }
+        assert_eq!(
+            &api.calls[api.calls.len() - 4..],
+            ["release_controller", "stop", "iteration", "shutdown"]
+        );
+        assert_eq!(api.calls.iter().filter(|call| *call == "stop").count(), 1);
+    }
+
+    #[test]
+    fn window_protocol_rejects_duplicate_out_of_order_malformed_and_missing_cycles() {
+        let mut complete = WindowProtocolValidator::default();
+        for cycle in 1..=100 {
+            for phase in ["started", "created", "destroyed"] {
+                complete.accept(cycle, phase).unwrap();
+            }
+        }
+        assert!(complete.complete());
+
+        for sequence in [
+            vec![(1, "started"), (1, "started")],
+            vec![(1, "created")],
+            vec![(0, "started")],
+            vec![(101, "started")],
+            vec![(1, "started"), (1, "shown")],
+            vec![(1, "started"), (1, "created"), (2, "started")],
+        ] {
+            let mut validator = WindowProtocolValidator::default();
+            assert!(sequence
+                .into_iter()
+                .any(|(cycle, phase)| validator.accept(cycle, phase).is_err()));
+        }
+
+        let mut missing = WindowProtocolValidator::default();
+        missing.accept(1, "started").unwrap();
+        missing.accept(1, "created").unwrap();
+        assert!(!missing.complete());
+    }
+
+    #[test]
+    fn window_cycle_fails_closed_without_shown_confirmation_and_still_shuts_down() {
+        let mut api = SyntheticWindowApi::success();
+        api.shown = false;
+
+        assert!(matches!(
+            run_window_cycles_with(&mut api),
+            Err(WindowFailure::Lifecycle(diagnostic)) if diagnostic.contains("shown state")
+        ));
+        assert_eq!(api.events, ["MDLUMA_EVIDENCE\t1\twindow\t1\tstarted"]);
+        assert_eq!(api.calls.last().unwrap(), "shutdown");
+    }
+
+    #[test]
+    fn window_cycle_rejects_missing_destroy_event_and_preserves_cleanup_failure() {
+        let mut api = SyntheticWindowApi::success();
+        api.shutdown_rejected = true;
+        api.transient_destroy_never = true;
+
+        let error = run_window_cycles_with(&mut api).unwrap_err();
+        assert!(matches!(
+            error,
+            WindowFailure::PrimaryAndShutdown { primary, shutdown }
+                if matches!(primary.as_ref(), WindowFailure::Lifecycle(_))
+                    && matches!(shutdown.as_ref(), WindowFailure::Lifecycle(_))
+        ));
+        assert_eq!(api.calls.last().unwrap(), "shutdown");
     }
 }

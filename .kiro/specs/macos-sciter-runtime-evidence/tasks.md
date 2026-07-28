@@ -117,7 +117,7 @@
   - _Boundary: LifecycleHarness_
   - _Depends: 3.3, 4.1_
 
-- [ ] 4.3 transient window child lifecycle modeを実装する（1-3時間）
+- [x] 4.3 transient window child lifecycle modeを実装する（1-3時間）
   - controller windowを維持しながらtransient windowを逐次create、show、closeする。
   - shown state確認後だけCreatedを、`SC_ENGINE_DESTROYED` callback復帰後だけDestroyedを出力する。
   - contextをcallback外で解放してから次cycleへ進み、100 cycle後にcontrollerを正常終了する。
@@ -309,3 +309,4 @@
 - Task 3.4: childはunsafe operation直前のstageをflushし、exit未観測時はgate Passではなく`success_candidate`だけを出力する。
 - Task 4.1: Nodeはpure reducerだけを検証し、Sciter API shapeはasset contractに限定する。実runtime lifecycleはTask 4.2で検証する。
 - Task 4.2: pinned wrapperに合わせてSTOPだけがraw zeroを要求し、INIT/SHUTDOWNは正常復帰を受理する。primaryとshutdown failureは両方保持する。
+- Task 4.3: transient contextは`SC_ENGINE_DESTROYED` callback復帰確認後にownerが解放し、その後だけDestroyed eventと次cycleを許可する。
