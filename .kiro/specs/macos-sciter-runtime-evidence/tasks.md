@@ -108,7 +108,7 @@
   - _Boundary: PopupFixture_
   - _Depends: 1.2_
 
-- [ ] 4.2 popup child lifecycle modeを実装する（1-3時間）
+- [x] 4.2 popup child lifecycle modeを実装する（1-3時間）
   - INIT、controller作成、fixture load、event iteration、controller destroy、loop停止、SHUTDOWNの順序を維持する。
   - Sciter debug callbackのUTF-16 protocol lineを検証し、child stdoutへ転送する。
   - 各cycleでStarted、Shown、Closedが一度ずつ順序通りに出力される。
@@ -308,3 +308,4 @@
 - Task 3.3: registered callback contextは`Pin<Box<_>>`で固定し、destroy callback復帰後までownerが解放しない。
 - Task 3.4: childはunsafe operation直前のstageをflushし、exit未観測時はgate Passではなく`success_candidate`だけを出力する。
 - Task 4.1: Nodeはpure reducerだけを検証し、Sciter API shapeはasset contractに限定する。実runtime lifecycleはTask 4.2で検証する。
+- Task 4.2: pinned wrapperに合わせてSTOPだけがraw zeroを要求し、INIT/SHUTDOWNは正常復帰を受理する。primaryとshutdown failureは両方保持する。

@@ -21,9 +21,9 @@ use crate::model::{
 };
 use crate::sciter::{
     host_context_drop_count_for_tests, reset_context_drop_counts_for_tests, AbiField, AppCommand,
-    DebugCallbackContext, DynamicLoader, HostCallbackContext, LifecycleEntry, LifecycleError,
-    RuntimeAbiError, RuntimeLoadError, SciterRuntime, ThreadContext, WindowFlags, WindowState,
-    RTLD_LOCAL, RTLD_NOW,
+    DebugCallbackContext, DynamicLoader, HostCallbackContext, HostCallbackFailure, LifecycleEntry,
+    LifecycleError, RuntimeAbiError, RuntimeLoadError, SciterRuntime, ThreadContext, WindowFlags,
+    WindowState, RTLD_LOCAL, RTLD_NOW,
 };
 
 const ARTIFACT_MANIFEST: &str = "schema_version=1\nrepository=https://gitlab.com/sciter-engine/sciter-js-sdk\ncommit=e31ec0f726bdbe5d0402ad647f3b34feef84654e\nsdk_relative_path=bin/macosx/libsciter.dylib\nworkspace_relative_path=vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib\nsha256=be5ac8b83fd46a17b9f6507d38b37ec5c3dcc14466bc36c04f42014d2d506c4b\nengine_version=6.0.3.18\napi_version=10\nversion_header_path=vendor/sciter-js-sdk-main/include/sciter-version.h\napi_header_path=vendor/sciter-js-sdk-main/include/sciter-x-api.h\nversion_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-version.h\napi_header_source=https://gitlab.com/sciter-engine/sciter-js-sdk/-/blob/e31ec0f726bdbe5d0402ad647f3b34feef84654e/include/sciter-x-api.h\n";
@@ -614,6 +614,7 @@ fn synthetic_api_table(
 thread_local! {
     static LIFECYCLE_CALLS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
     static LIFECYCLE_COMMANDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    static LIFECYCLE_EXEC_RESULT: RefCell<Option<(u32, crate::sciter::bindings::INT_PTR)>> = const { RefCell::new(None) };
     static SYNTHETIC_MAIN_THREAD: RefCell<bool> = const { RefCell::new(true) };
 }
 
@@ -628,7 +629,12 @@ unsafe extern "C" fn synthetic_sciter_exec(
 ) -> crate::sciter::bindings::INT_PTR {
     LIFECYCLE_CALLS.with(|calls| calls.borrow_mut().push("exec"));
     LIFECYCLE_COMMANDS.with(|commands| commands.borrow_mut().push(command));
-    1
+    LIFECYCLE_EXEC_RESULT.with(|result| {
+        result
+            .borrow()
+            .filter(|(expected, _)| *expected == command)
+            .map_or_else(|| if command == 6 { 1 } else { 0 }, |(_, raw)| raw)
+    })
 }
 
 unsafe extern "C" fn synthetic_create_window(
@@ -1051,17 +1057,108 @@ fn lifecycle_helpers_use_official_commands_and_keep_debug_context_stable_through
         1
     );
     assert_eq!(api.window_state(window).unwrap(), WindowState::Shown);
-    api.exec(AppCommand::Init, 0, 0).unwrap();
-    api.exec(AppCommand::LoopIteration, 0, 0).unwrap();
-    api.exec(AppCommand::Stop, 0, 0).unwrap();
-    let shutdown = api
-        .exec(AppCommand::Shutdown, 0, 0)
-        .unwrap()
-        .shutdown_complete()
-        .unwrap();
+    api.init().unwrap();
+    assert!(api.loop_iteration().unwrap());
+    api.stop().unwrap();
+    let shutdown = api.shutdown().unwrap();
     registered_debug.release_after_shutdown(shutdown);
 
     LIFECYCLE_COMMANDS.with(|commands| assert_eq!(*commands.borrow(), [2, 6, 0, 3]));
+}
+
+#[test]
+fn lifecycle_helpers_match_the_pinned_official_wrapper_return_contracts() {
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let table = synthetic_lifecycle_api_table();
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+
+    LIFECYCLE_EXEC_RESULT.with(|result| *result.borrow_mut() = Some((AppCommand::Init as u32, 17)));
+    api.init().unwrap();
+
+    LIFECYCLE_EXEC_RESULT.with(|result| *result.borrow_mut() = Some((AppCommand::Stop as u32, 17)));
+    assert_eq!(
+        api.stop(),
+        Err(LifecycleError::CommandRejected {
+            command: AppCommand::Stop,
+            raw: 17,
+        })
+    );
+
+    LIFECYCLE_EXEC_RESULT
+        .with(|result| *result.borrow_mut() = Some((AppCommand::Shutdown as u32, 17)));
+    api.shutdown().unwrap();
+    LIFECYCLE_EXEC_RESULT.with(|result| *result.borrow_mut() = None);
+}
+
+#[test]
+fn off_main_host_callback_records_typed_failure_for_the_owner() {
+    reset_context_drop_counts_for_tests();
+    SYNTHETIC_MAIN_THREAD.with(|is_main| *is_main.borrow_mut() = true);
+    let mut table = synthetic_lifecycle_api_table();
+    table.SciterSetCallback = Some(synthetic_set_callback_without_notification);
+    let runtime = unsafe { SciterRuntime::from_api_table_for_tests(&table) };
+    let api = runtime
+        .lifecycle_api_with_main_thread_check(synthetic_main_thread_check)
+        .unwrap();
+    let window = api.create_window(WindowFlags::MAIN, None, None).unwrap();
+    let mut registered = api
+        .register_host_callback(window, HostCallbackContext::new())
+        .unwrap();
+
+    registered.invoke_destroy_off_main_for_tests();
+
+    assert_eq!(
+        registered.destroyed(),
+        Err(LifecycleError::HostCallback(
+            HostCallbackFailure::OffMainThread
+        ))
+    );
+    drop(registered);
+    assert_eq!(host_context_drop_count_for_tests(), 0);
+}
+
+#[test]
+fn debug_callback_uses_the_exact_utf16_pointer_length_without_lossy_conversion() {
+    let received = std::rc::Rc::new(RefCell::new(Vec::<String>::new()));
+    let captured = std::rc::Rc::clone(&received);
+    let mut context = DebugCallbackContext::with_handler("MDLUMA_EVIDENCE", move |text| {
+        captured.borrow_mut().push(text.to_owned());
+        Ok(())
+    });
+    let text: Vec<_> = "MDLUMA_EVIDENCE\t1\tpopup\t1\tstartedTRAILING"
+        .encode_utf16()
+        .collect();
+    let exact_length = text.len() - "TRAILING".len();
+
+    unsafe { context.invoke_for_tests(text.as_ptr(), exact_length as u32) };
+
+    assert_eq!(
+        received.borrow().as_slice(),
+        &["MDLUMA_EVIDENCE\t1\tpopup\t1\tstarted"]
+    );
+    assert_eq!(context.failure_for_tests(), None);
+}
+
+#[test]
+fn debug_callback_rejects_null_unaligned_and_invalid_utf16_inputs() {
+    let invalid_utf16 = [0xd800];
+    let cases = [
+        (std::ptr::null(), 1, "null UTF-16 pointer"),
+        (1usize as *const u16, 1, "unaligned UTF-16 pointer"),
+        (invalid_utf16.as_ptr(), 1, "not valid UTF-16"),
+    ];
+
+    for (pointer, length, expected) in cases {
+        let mut context = DebugCallbackContext::new("MDLUMA_EVIDENCE");
+        unsafe { context.invoke_for_tests(pointer, length) };
+        assert!(
+            context.failure_for_tests().unwrap().contains(expected),
+            "missing {expected}"
+        );
+    }
 }
 
 #[test]
@@ -1186,7 +1283,12 @@ fn main() {{
     let manifest_text = std::fs::read_to_string({artifact_manifest_path:?}).unwrap();
     let manifest = manifest::parse_artifact_manifest(&manifest_text).unwrap();
     let runtime = std::path::Path::new({runtime:?}).canonicalize().unwrap();
-    harness::run_child(harness::ChildMode::ApiAbi, &runtime, &manifest).unwrap();
+    harness::run_child(
+        harness::ChildMode::ApiAbi,
+        &runtime,
+        std::path::Path::new("unused-for-api-abi"),
+        &manifest,
+    ).unwrap();
 }}
 "#,
     );

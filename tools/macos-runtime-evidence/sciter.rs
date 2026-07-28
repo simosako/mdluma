@@ -168,14 +168,32 @@ pub(crate) enum LifecycleEntry {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HostCallbackFailure {
+    OffMainThread,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LifecycleError {
     NotMainThread,
     MissingEntry(LifecycleEntry),
+    CommandRejected {
+        command: AppCommand,
+        raw: bindings::INT_PTR,
+    },
+    HostCallback(HostCallbackFailure),
     NullWindow,
     HtmlTooLarge,
     BaseUrlNotTerminated,
     HtmlLoadFailed,
 }
+
+impl fmt::Display for LifecycleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for LifecycleError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -283,6 +301,7 @@ pub(crate) struct LifecycleApi {
 
 pub(crate) struct HostContext {
     destroyed: bool,
+    failure: Option<HostCallbackFailure>,
     is_main_thread: fn() -> bool,
     _main_thread_only: std::marker::PhantomData<Rc<()>>,
     _pinned: std::marker::PhantomPinned,
@@ -304,6 +323,7 @@ impl HostCallbackContext {
         Self {
             context: Box::pin(HostContext {
                 destroyed: false,
+                failure: None,
                 is_main_thread: is_process_main_thread,
                 _main_thread_only: std::marker::PhantomData,
                 _pinned: std::marker::PhantomPinned,
@@ -330,7 +350,28 @@ impl RegisteredHostContext {
         if !(context.is_main_thread)() {
             return Err(LifecycleError::NotMainThread);
         }
+        if let Some(failure) = context.failure {
+            return Err(LifecycleError::HostCallback(failure));
+        }
         Ok(context.destroyed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn invoke_destroy_off_main_for_tests(&mut self) {
+        let context = self.context.as_mut().unwrap();
+        let context = unsafe { context.as_mut().get_unchecked_mut() };
+        context.is_main_thread = || false;
+        let mut notification = bindings::SCITER_CALLBACK_NOTIFICATION {
+            code: SC_ENGINE_DESTROYED,
+            hwnd: std::ptr::null_mut(),
+        };
+        unsafe {
+            host_callback(
+                &mut notification,
+                context as *mut HostContext as *mut c_void,
+            )
+        };
+        context.is_main_thread = || true;
     }
 }
 
@@ -347,6 +388,8 @@ impl Drop for RegisteredHostContext {
 pub(crate) struct DebugContext {
     protocol_prefix: &'static str,
     callback_count: usize,
+    failure: Option<String>,
+    handler: Box<dyn FnMut(&str) -> Result<(), String>>,
     is_main_thread: fn() -> bool,
     _main_thread_only: std::marker::PhantomData<Rc<()>>,
     _pinned: std::marker::PhantomPinned,
@@ -358,10 +401,19 @@ pub(crate) struct DebugCallbackContext {
 
 impl DebugCallbackContext {
     pub(crate) fn new(protocol_prefix: &'static str) -> Self {
+        Self::with_handler(protocol_prefix, |_| Ok(()))
+    }
+
+    pub(crate) fn with_handler(
+        protocol_prefix: &'static str,
+        handler: impl FnMut(&str) -> Result<(), String> + 'static,
+    ) -> Self {
         Self {
             context: Box::pin(DebugContext {
                 protocol_prefix,
                 callback_count: 0,
+                failure: None,
+                handler: Box::new(handler),
                 is_main_thread: is_process_main_thread,
                 _main_thread_only: std::marker::PhantomData,
                 _pinned: std::marker::PhantomPinned,
@@ -371,6 +423,19 @@ impl DebugCallbackContext {
 
     pub(crate) fn stable_address(&self) -> NonNull<c_void> {
         NonNull::from(self.context.as_ref().get_ref()).cast()
+    }
+
+    #[cfg(test)]
+    pub(crate) unsafe fn invoke_for_tests(&mut self, text: *const u16, text_length: u32) {
+        unsafe {
+            self.context.as_mut().get_unchecked_mut().is_main_thread = || true;
+        }
+        unsafe { debug_callback(self.stable_address().as_ptr(), 0, 0, text, text_length) };
+    }
+
+    #[cfg(test)]
+    pub(crate) fn failure_for_tests(&self) -> Option<&str> {
+        self.context.as_ref().get_ref().failure.as_deref()
     }
 }
 
@@ -398,6 +463,14 @@ impl RegisteredDebugContext {
             return Err(LifecycleError::NotMainThread);
         }
         Ok(context.callback_count)
+    }
+
+    pub(crate) fn failure(&self) -> Result<Option<&str>, LifecycleError> {
+        let context = self.context.as_ref().unwrap().as_ref().get_ref();
+        if !(context.is_main_thread)() {
+            return Err(LifecycleError::NotMainThread);
+        }
+        Ok(context.failure.as_deref())
     }
 
     pub(crate) fn release_after_shutdown(mut self, _complete: ShutdownComplete) {
@@ -510,6 +583,9 @@ unsafe extern "C" fn host_callback(
     }
     let context = unsafe { &mut *context.cast::<HostContext>() };
     if !(context.is_main_thread)() {
+        context
+            .failure
+            .get_or_insert(HostCallbackFailure::OffMainThread);
         return 0;
     }
     if unsafe { (*notification).code } == SC_ENGINE_DESTROYED {
@@ -529,8 +605,36 @@ unsafe extern "C" fn debug_callback(
         return;
     }
     let context = unsafe { &mut *context.cast::<DebugContext>() };
-    if (context.is_main_thread)() {
-        context.callback_count += 1;
+    if !(context.is_main_thread)() {
+        context.failure.get_or_insert_with(|| {
+            "debug callback did not execute on the process main thread".to_owned()
+        });
+        return;
+    }
+    context.callback_count += 1;
+    if context.failure.is_some() {
+        return;
+    }
+    if _text.is_null() {
+        context.failure = Some(format!(
+            "debug callback supplied a null UTF-16 pointer with length {_text_length}"
+        ));
+        return;
+    }
+    if (_text as usize) % std::mem::align_of::<u16>() != 0 {
+        context.failure = Some("debug callback supplied an unaligned UTF-16 pointer".to_owned());
+        return;
+    }
+    let text = unsafe { std::slice::from_raw_parts(_text, _text_length as usize) };
+    let text = match String::from_utf16(text) {
+        Ok(text) => text,
+        Err(error) => {
+            context.failure = Some(format!("debug callback text is not valid UTF-16: {error}"));
+            return;
+        }
+    };
+    if let Err(error) = (context.handler)(&text) {
+        context.failure = Some(error);
     }
 }
 
@@ -555,6 +659,32 @@ impl LifecycleApi {
             raw,
             command: Some(command),
         })
+    }
+
+    pub(crate) fn init(&self) -> Result<(), LifecycleError> {
+        self.exec(AppCommand::Init, 0, 0)?;
+        Ok(())
+    }
+
+    pub(crate) fn loop_iteration(&self) -> Result<bool, LifecycleError> {
+        Ok(self.exec(AppCommand::LoopIteration, 0, 0)?.raw() != 0)
+    }
+
+    pub(crate) fn stop(&self) -> Result<(), LifecycleError> {
+        let raw = self.exec(AppCommand::Stop, 0, 0)?.raw();
+        if raw == 0 {
+            Ok(())
+        } else {
+            Err(LifecycleError::CommandRejected {
+                command: AppCommand::Stop,
+                raw,
+            })
+        }
+    }
+
+    pub(crate) fn shutdown(&self) -> Result<ShutdownComplete, LifecycleError> {
+        self.exec(AppCommand::Shutdown, 0, 0)?;
+        Ok(ShutdownComplete(()))
     }
 
     pub(crate) fn create_window(
