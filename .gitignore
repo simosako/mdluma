@@ -39,6 +39,9 @@ vendor/sciter-js-sdk-main/bin/windows/*
 !vendor/sciter-js-sdk-main/bin/windows/x64/
 vendor/sciter-js-sdk-main/bin/windows/x64/*
 !vendor/sciter-js-sdk-main/bin/windows/x64/sciter.dll
+!vendor/sciter-js-sdk-main/bin/macosx/
+vendor/sciter-js-sdk-main/bin/macosx/*
+!vendor/sciter-js-sdk-main/bin/macosx/libsciter.dylib
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
