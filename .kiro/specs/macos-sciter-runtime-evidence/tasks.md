@@ -1,5 +1,7 @@
 # Implementation Plan
 
+> **Status (2026-07-28): Suspended.** 14/33 tasks完了時点でmigration-first方針へ移行した。未完了taskは現行roadmapの依存条件ではなく、明示的に再開を承認しない限り実装しない。取得済みtoolkitと証拠は`macos-sciter-host-smoke`で必要に応じて再利用する。
+
 - [ ] 1. Standalone evidence toolkitの基盤を構築する
 - [x] 1.1 native arm64向けbuild entryとtest entryを実装する（1-3時間）
   - `run`と`test`の実行modeを受け付け、repository rootから直接native `rustc`を呼び出す。

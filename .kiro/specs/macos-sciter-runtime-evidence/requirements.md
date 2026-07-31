@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **Status (2026-07-28): Superseded as an active gate.** 本文は承認時点のhistorical requirementsとして保持するが、Requirement 8のdownstream blocking条件は現行のmigration-first roadmapでは適用しない。本仕様は14/33 tasks完了地点でsuspendされ、正式runtime判定は`macos-sciter-host-smoke`へ移管された。
+
 ## Introduction
 
 本仕様は、macOS移植を進める開発者がSciter.js SDK 6.0.3.18のmacOS runtimeをApple Silicon向けMDLumaのベースラインとして採用できるか判断するための検証証拠を定義する。現在は公式runtimeの配置、ハッシュ、含有architectureまで確認済みだが、APIと限定的なABI smoke、MDLumaが利用する`menu.popup`とwindow終了処理の安定性、同梱再配布条件が未確定である。再実行可能な検証結果と明示的なGo/No-Go判定を残し、後続のmacOS対応を未検証の前提で開始しない状態を目指す。

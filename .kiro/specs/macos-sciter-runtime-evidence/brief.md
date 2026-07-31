@@ -1,5 +1,9 @@
 # Brief: macos-sciter-runtime-evidence
 
+## Status
+
+2026-07-28に14/33 tasks完了地点で実装をsuspendした。作成済みtoolkitと取得済み証拠はtechnical spikeおよび後続の診断資産として保存する。未完了taskは`platform-contract-extraction`、`sciter-win32-separation`、`macos-sciter-host-smoke`をblockしない。
+
 ## Problem
 
 macOS移植を進める開発者は、採用予定のSciterランタイムがApple Siliconでロード可能か、既存bindingsとABI互換か、MDLumaで使うpopupや終了処理が安定しているか、同梱再配布できるかを確証できていない。この状態でプラットフォーム実装を始めると、後からランタイム更新と大規模な手戻りが発生する。
@@ -10,16 +14,16 @@ Windowsでは公式Sciter 6.0.3.18の`sciter.dll`とAPI version 10の生成済�
 
 ## Desired Outcome
 
-Sciter 6.0.3.18をmacOS移植のベースラインとして採用できるかを、再実行可能な検証と記録に基づいてGo/No-Go判定できる。No-Goの場合は6.0.4.8へ両OSランタイムとbindingsを同時更新する条件が明確になっている。
+Sciter 6.0.3.18の由来、architecture、hash、load、version、限定ABI、popupとwindow lifecycleに関する取得済み証拠を、後続の製品経路smokeで再利用できる。正式なruntime判定は`macos-sciter-host-smoke`が所有する。
 
 ## Approach
 
-固定commitとハッシュをmanifestへ記録し、Apple Silicon上で絶対パス指定の`dlopen`、`dlsym("SciterAPI")`、API version 10、engine version 6.0.3.18を検証する最小smokeを用意する。併せてarchitecture、minimum OS、依存、install name、署名状態、popup反復操作、ウィンドウ終了反復、ライセンス・表示・再配布条件をチェックリスト化し、Go/No-Go結果を残す。
+固定commitとハッシュのmanifest、Apple Silicon上の`dlopen`、`dlsym("SciterAPI")`、API version 10、engine version 6.0.3.18、限定ABI、popupとwindow lifecycleの最小smokeまでをtechnical spikeとして維持する。未実装のsupervisor、evidence store、decision publicationは現時点では追加しない。
 
 ## Scope
 
-- **In**: SDK revisionとruntime hashの固定、arm64確認、動的ロードとAPI/version smoke、既存bindingsのABI境界確認、popupと終了処理の実機ストレス確認、ライセンス・About表記・dylib再配布条件の記録、Go/No-Go判定。
-- **Out**: 製品コードへのmacOSローダー実装、Cocoa UI、`.app`パッケージング、Developer ID署名、notarization、Windowsランタイム更新。ただしNo-Go時の更新方針は記録する。
+- **In**: 実装済みのSDK revisionとruntime hash固定、arm64確認、動的loadとAPI/version smoke、限定ABI確認、popupとwindow lifecycle smokeの保存・保守。
+- **Out**: 未完了のevidence orchestration・publication、正式Go/No-Go判定、製品コードへのmacOS loader実装、Cocoa UI、`.app` packaging、Developer ID署名、notarization、Windows runtime更新。
 
 ## Boundary Candidates
 
@@ -35,7 +39,7 @@ Sciter 6.0.3.18をmacOS移植のベースラインとして採用できるかを
 ## Upstream / Downstream
 
 - **Upstream**: `design/macos-porting-architecture.md`、公式Sciter.js SDK 6.0.3.18 commit、既存Windows runtimeと生成済みbindings。
-- **Downstream**: `platform-contract-extraction`、`sciter-win32-separation`、将来のmacOS adapters、native-frame UI、`.app` packaging。
+- **Downstream**: `macos-sciter-host-smoke`が診断toolkitと観測結果を必要に応じて再利用する。`platform-contract-extraction`と`sciter-win32-separation`は本仕様の完了に依存しない。
 
 ## Existing Spec Touchpoints
 
@@ -44,4 +48,4 @@ Sciter 6.0.3.18をmacOS移植のベースラインとして採用できるかを
 
 ## Constraints
 
-初期ベースラインはSciter 6.0.3.18、API version 10、Apple Siliconとする。6.0.3.18以降でmacOS popup AV、終了時AV、heap corruptionの修正履歴があるため、MDLumaが使用する`menu.popup`と終了処理の実機確認を必須とする。再配布条件に未解決事項が残る場合はGoとしない。
+診断対象はSciter 6.0.3.18、API version 10、Apple Siliconとする。再配布・再署名条件は`.app`配布前のrelease gateで解決し、このtechnical spikeや後続のローカル実行をblockしない。
