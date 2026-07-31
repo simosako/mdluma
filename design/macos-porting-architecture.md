@@ -307,18 +307,18 @@ The runtime filename is platform-specific:
 
 Rename Windows-specific concepts such as `SCITER_DLL_NAME`, `sciter_dll_path`, and `MissingDll` to runtime-neutral names. User-facing diagnostics must name the actual missing runtime file.
 
-### Apple Silicon Runtime Prerequisite
+### Apple Silicon Runtime Baseline
 
-The currently vendored SDK copy contains `bin/macosx/libsciter.dylib`, but it was inspected from Windows and its architecture has not been verified locally.
+The vendored SDK copy contains `bin/macosx/libsciter.dylib`. The Phase 0 technical spike verified its fixed hash, Universal Binary slices including `arm64`, dynamic loading, API version 10, engine version 6.0.3.18, a limited ABI surface, popup operation, and window lifecycle on Apple Silicon.
 
-Before macOS implementation begins:
+Before a distributable macOS build is released:
 
-1. Obtain the macOS Sciter SDK from the official Sciter GitLab distribution source.
-2. On an Apple Silicon Mac, run `lipo -info` on `libsciter.dylib`.
-3. Confirm that it contains `arm64` and that its redistribution license permits the intended package.
-4. Run a runtime-load smoke test against that exact binary.
+1. Reconfirm the packaged runtime's identity and `arm64` slice against the recorded technical-spike evidence.
+2. Exercise the exact runtime through MDLuma's product loader, window, rendering, popup, and shutdown paths.
+3. Confirm that redistribution and re-signing terms permit the intended package.
+4. If the product-path smoke exposes a 6.0.3.18 incompatibility, update the Windows DLL, macOS dylib, headers, and generated bindings together before repeating the smoke.
 
-The Sciter GitLab `bin/macosx` directory currently publishes `libsciter.dylib`. Architecture and ABI must still be checked from the downloaded artifact, not inferred from its filename or repository path.
+Sciter 6.0.3.18 remains a provisional baseline until the product-path smoke passes. The standalone technical spike informs diagnosis but does not by itself constitute release approval.
 
 ### App Bundle Layout
 
@@ -351,15 +351,11 @@ The build/package step must ensure the executable resolves the bundled Sciter li
 
 ## Migration Plan
 
-### Phase 0: Establish macOS Runtime Evidence
+### Phase 0: Establish macOS Runtime Evidence (Suspended Technical Spike)
 
-1. Download the macOS Sciter SDK on Apple Silicon.
-2. Verify `libsciter.dylib` architecture with `lipo -info`.
-3. Verify the license and redistribution requirements for the exact SDK version.
-4. Add a minimal macOS runtime smoke program or test that loads the library, resolves `SciterAPI`, and reads its version.
-5. Record the validated Sciter SDK revision and runtime architecture in the macOS implementation specification.
+Fourteen of thirty-three planned tasks established the artifact manifest, architecture and dependency probes, dynamic load, version and limited ABI smoke, and isolated popup/window lifecycle fixtures. The remaining evidence supervisor, store, publication, and decision-pipeline tasks are suspended.
 
-No Cocoa UI implementation should begin before this phase passes.
+Retain the toolkit as a diagnostic asset. Phase 0 completion is not a prerequisite for Phase 1 or Phase 2, and unresolved redistribution or re-signing terms are a release gate rather than a local migration blocker.
 
 ### Phase 1: Extract Platform Contracts
 
@@ -377,9 +373,17 @@ No Cocoa UI implementation should begin before this phase passes.
 3. Move all WndProc and Win32-message behavior into a Windows-only adapter.
 4. Make common `SciterWindow` depend on a small platform window adapter where necessary.
 5. Make Sciter exchange DnD and DOM command handling work without Windows-only code paths.
-6. Remove non-Windows placeholder errors only after a macOS runtime smoke test proves the common path works.
+6. Preserve explicit non-Windows unsupported paths until the minimal macOS host supplies and verifies the corresponding implementation.
 
-### Phase 3: Implement macOS Adapters
+### Phase 3: Connect a Minimal macOS Host and Verify the Runtime
+
+1. Implement macOS dynamic runtime loading and the minimum window adapter required to start the viewer.
+2. Connect the implementation through the product composition root rather than a standalone harness.
+3. Verify Markdown-to-HTML rendering, local resources, popup behavior, and normal shutdown on Apple Silicon.
+4. Use Sciter 6.0.3.18 provisionally; if the product path exposes an incompatibility, update both platform runtimes, headers, and bindings together to 6.0.4.8 and repeat the checks.
+5. Do not block local product-path verification on unresolved distribution permission; resolve it before packaging for release.
+
+### Phase 4: Implement Complete macOS Adapters
 
 1. Implement macOS dynamic runtime loading.
 2. Implement macOS file dialog, font selection, browser launch, and data-directory resolution.
@@ -387,7 +391,7 @@ No Cocoa UI implementation should begin before this phase passes.
 4. Implement macOS geometry capture/restore only after the basic viewer is stable.
 5. Add integration tests for each adapter where native behavior can be tested, and isolate remaining manual checks.
 
-### Phase 4: Introduce Native-Frame UI Variant
+### Phase 5: Introduce Native-Frame UI Variant
 
 1. Add `WindowPresentation` to the HTML shell model.
 2. Keep the current Windows custom-frame markup and behavior under `CustomFrame`.
@@ -395,7 +399,7 @@ No Cocoa UI implementation should begin before this phase passes.
 4. Remove macOS dependence on `WindowChromeController` and Win32 caption event workarounds.
 5. Verify Open, search, theme, recent files, text selection/copy, DnD, and external links in both variants.
 
-### Phase 5: Package and Validate macOS
+### Phase 6: Package and Validate macOS
 
 1. Build the `.app` bundle.
 2. Bundle `libsciter.dylib` with a verified install name/path.
