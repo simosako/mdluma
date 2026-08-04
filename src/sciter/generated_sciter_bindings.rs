@@ -2,8 +2,8 @@
 
 pub const SCITER_VERSION_0: u32 = 6;
 pub const SCITER_VERSION_1: u32 = 0;
-pub const SCITER_VERSION_2: u32 = 3;
-pub const SCITER_VERSION_3: u32 = 18;
+pub const SCITER_VERSION_2: u32 = 4;
+pub const SCITER_VERSION_3: u32 = 9;
 pub const SCITER_API_VERSION: u32 = 10;
 pub type wchar_t = ::core::ffi::c_ushort;
 pub type SBOOL = ::core::ffi::c_int;
@@ -1609,5 +1609,6 @@ pub struct _ISciterAPI {
     pub SciterRequestAnimationFrameEvent: ::core::option::Option<
         unsafe extern "C" fn(he: HELEMENT, eventCode: UINT, reason: UINT_PTR) -> INT,
     >,
+    pub SciterRequestPaint: ::core::option::Option<unsafe extern "C" fn(he: HELEMENT) -> INT>,
 }
 pub type ISciterAPI = _ISciterAPI;
